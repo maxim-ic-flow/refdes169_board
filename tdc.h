@@ -1,0 +1,168 @@
+#ifndef _TDC_H_
+#define _TDC_H_
+
+#include "max3510x.h"
+#include "arm_math.h"
+
+#pragma pack(1)
+
+typedef struct _tdc_tof_native_t
+{
+	max3510x_measurement_t	up;			// 30 bytes
+	max3510x_measurement_t	down;		// 30 bytes
+	max3510x_fixed_t		tof_diff;	// 4 bytes
+}
+tdc_tof_native_t;
+
+typedef struct _tdc_tof_fp_measurement_t
+{
+	uint8_t		t1_ideal;
+	uint8_t		t1_t2;
+	double_t	hit[6];
+	double_t	average; 
+}
+tdc_tof_fp_measurement_t;
+
+typedef struct _tdc_tof_fp_t
+{
+	tdc_tof_fp_measurement_t	up;
+	tdc_tof_fp_measurement_t	down;
+	double_t					tof_diff;
+}
+tdc_tof_fp_t;
+
+typedef union _tdc_tof_t
+{
+	// size must be evenly divisible by 4 bytes
+	// so that tdc_get_tof_result() works correctly
+
+	tdc_tof_native_t 	native;
+	tdc_tof_fp_t		fp;
+
+}
+tdc_tof_t;
+
+typedef struct _tdc_result_t
+{
+    uint16_t                status;
+	tdc_tof_t				tof;
+    uint16_t                pad;
+}
+tdc_result_t;
+
+#pragma pack()
+
+void tdc_interrupt(void*);
+
+void tdc_init(void);
+void tdc_get_tof_result( tdc_result_t * p_result );
+void tdc_configure(max3510x_registers_t *p_config);
+
+void tdc_set_sfreq( uint16_t sfreq );
+uint16_t tdc_get_sfreq( void );
+void tdc_set_dreq( uint16_t v );
+uint16_t tdc_get_dreq( void );
+void tdc_set_hreg_d( uint16_t v );
+uint16_t tdc_get_hreg_d( void );
+void tdc_set_vs( uint16_t v );
+uint16_t tdc_get_vs( void );
+void tdc_set_lt_n( uint16_t v );
+uint16_t tdc_get_lt_n( void );
+void tdc_set_lt_s( uint16_t v );
+uint16_t tdc_get_lt_s( void );
+void tdc_set_st( uint16_t v );
+uint16_t tdc_get_st( void );
+void tdc_set_50d( uint16_t v );
+uint16_t tdc_get_50d( void );
+void tdc_set_pecho( uint16_t v );
+uint16_t tdc_get_pecho( void );
+void tdc_set_afe_bp( uint16_t v );
+uint16_t tdc_get_afe_bp( void );
+void tdc_set_sd( uint16_t v );
+uint16_t tdc_get_sd( void );
+void tdc_set_afeout( uint16_t v );
+uint16_t tdc_get_afeout( void );
+void tdc_set_4m_bp( uint16_t v );
+uint16_t tdc_get_4m_bp( void );
+void tdc_set_f0( uint16_t v );
+uint16_t tdc_get_f0( void );
+void tdc_set_pga( uint16_t v );
+uint16_t tdc_get_pga( void );
+void tdc_set_lowq( uint16_t v );
+uint16_t tdc_get_lowq( void );
+void tdc_set_bp_bp( uint16_t v );
+uint16_t tdc_get_bp_bp( void );
+void tdc_set_pl( uint16_t v );
+uint16_t tdc_get_pl( void );
+void tdc_set_dpl( uint16_t v );
+uint16_t tdc_get_dpl( void );
+void tdc_set_stop_pol( uint16_t v );
+uint16_t tdc_get_stop_pol( void );
+void tdc_set_stop( uint16_t v );
+uint16_t tdc_get_stop( void );
+void tdc_set_t2wv( uint16_t v );
+uint16_t tdc_get_t2wv( void );
+void tdc_set_tof_cyc( uint16_t v );
+uint16_t tdc_get_tof_cyc( void );
+void tdc_set_timout( uint16_t v );
+uint16_t tdc_get_timeout( void );
+void tdc_set_hitwv( const uint8_t *p_hitwave );
+void tdc_get_hitwv( uint8_t *p_hitwave );
+void tdc_set_c_offsetupr( uint8_t v );
+uint8_t tdc_get_c_offsetupr( void );
+void tdc_set_c_offsetup( uint8_t v );
+uint8_t tdc_get_c_offsetup( void );
+void tdc_set_c_offsetdnr( uint8_t v );
+uint8_t tdc_get_c_offsetdnr( void );
+void tdc_set_c_offsetdn( uint8_t v );
+uint8_t tdc_get_c_offsetdn( void );
+void tdc_set_tdf( uint16_t v );
+uint16_t tdc_get_tdf( void );
+void tdc_set_tdm( uint16_t v );
+uint16_t tdc_get_tdm( void );
+void tdc_set_tmf( uint16_t v );
+uint16_t tdc_get_tmf( void );
+void tdc_set_tmm( uint16_t v );
+uint16_t tdc_get_tmm( void );
+void tdc_set_cal_use( uint16_t v );
+uint16_t tdc_get_cal_use( void );
+void tdc_set_cal_cfg( uint16_t v );
+uint16_t tdc_get_cal_cfg( void );
+void tdc_set_precyc( uint16_t v );
+uint16_t tdc_get_precyc( void );
+void tdc_set_portcyc( uint16_t v );
+uint16_t tdc_get_portcyc( void );
+void tdc_set_dly( uint16_t v );
+uint16_t tdc_get_dly( void );
+void tdc_set_cmp_en( uint16_t v );
+uint16_t tdc_get_cmp_en( void );
+void tdc_set_cmp_sel( uint16_t v );
+uint16_t tdc_get_cmp_sel( void );
+void tdc_set_et_cont( uint16_t v );
+uint16_t tdc_get_et_cont( void );
+void tdc_set_cont_int( uint16_t v );
+uint16_t tdc_get_cont_int( void );
+void tdc_set_clk_s( uint16_t v );
+uint16_t tdc_get_clk_s( void );
+void tdc_set_cal_period( uint16_t v );
+uint16_t tdc_get_cal_period( void );
+void tdc_set_32k_bp( uint16_t v );
+uint16_t tdc_get_32k_bp( void );
+void tdc_set_32k_en( uint16_t v );
+uint16_t tdc_get_32k_en( void );
+void tdc_set_eosc( uint16_t v );
+uint16_t tdc_get_eosc( void );
+void tdc_set_am( uint16_t v );
+uint16_t tdc_get_am( void );
+void tdc_set_wf( uint16_t v );
+uint16_t tdc_get_wf( void );
+void tdc_set_wd( uint16_t v );
+uint16_t tdc_get_wd( void );
+void tdc_cmd_bpcal( void );
+void tdc_cmd_tof_diff( void );
+void tdc_cmd_tof_up( void );
+void tdc_cmd_tof_down( void );
+
+void tdc_cmd_read_config(  max3510x_registers_t *p_config );
+
+#endif

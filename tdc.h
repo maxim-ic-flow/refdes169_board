@@ -7,18 +7,18 @@
 
 typedef struct _tof_result_t
 {
-	max3510x_measurement_t	up;			// 30 bytes
-	max3510x_measurement_t	down;		// 30 bytes
-	max3510x_fixed_t		tof_diff;	// 4 bytes
+    max3510x_measurement_t	up;         // 30 bytes
+    max3510x_measurement_t	down;       // 30 bytes
+    max3510x_fixed_t		tof_diff;   // 4 bytes
 
 }
 tof_result_t;
 
 typedef struct _tdc_tof_result_t
 {
-	// evenly divisable by 4
+    // evenly divisable by 4
     uint16_t                status;
-	tof_result_t			tof;
+    tof_result_t	        tof; 
     uint16_t                pad;
 }
 tdc_tof_result_t;
@@ -26,27 +26,28 @@ tdc_tof_result_t;
 typedef struct _tdc_temperature_result_t
 {
     uint16_t                status;
-	max3510x_fixed_t		temperature[2];
+    max3510x_fixed_t	    temperature[2];
     uint16_t                pad;
 }
 tdc_temperature_result_t;
 
 typedef union _tdc_result_t
 {
-	uint16_t                	status;
-	tdc_temperature_result_t	temperature_result;
-	tdc_tof_result_t 			tof_result;
+    uint16_t                	status;
+    tdc_temperature_result_t	temperature_result;
+    tdc_tof_result_t 		    tof_result;
 }
 tdc_result_t;
 
 
 #pragma pack()
 
-void tdc_interrupt(void*);
+void tdc_interrupt( void* );
 
-void tdc_init(void);
+void tdc_init( void );
 void tdc_get_tof_result( tdc_tof_result_t * p_result );
-void tdc_configure(max3510x_registers_t *p_config);
+void tdc_get_temperature_result( tdc_temperature_result_t * p_result );
+void tdc_configure( max3510x_registers_t * p_config );
 
 void tdc_set_sfreq( uint16_t sfreq );
 uint16_t tdc_get_sfreq( void );
@@ -96,8 +97,8 @@ void tdc_set_tof_cyc( uint16_t v );
 uint16_t tdc_get_tof_cyc( void );
 void tdc_set_timout( uint16_t v );
 uint16_t tdc_get_timeout( void );
-void tdc_set_hitwv( const uint8_t *p_hitwave );
-void tdc_get_hitwv( uint8_t *p_hitwave );
+void tdc_set_hitwv( const uint8_t * p_hitwave );
+void tdc_get_hitwv( uint8_t * p_hitwave );
 void tdc_set_c_offsetupr( uint8_t v );
 uint8_t tdc_get_c_offsetupr( void );
 void tdc_set_c_offsetup( uint8_t v );
@@ -155,6 +156,6 @@ void tdc_cmd_tof_up( void );
 void tdc_cmd_tof_down( void );
 void tdc_start_event_engine( bool tof, bool temp );
 
-void tdc_cmd_read_config(  max3510x_registers_t *p_config );
+void tdc_cmd_read_config(  max3510x_registers_t * p_config );
 
 #endif

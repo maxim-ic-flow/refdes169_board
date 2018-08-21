@@ -56,7 +56,7 @@
 #define BOARD_MAX3510X_CLOCK_FREQ               4000000 // nominal frequency of the max35104's high speed crystal
 
 #define BOARD_UART_TX_FIFO_LVL		(MXC_UART_FIFO_DEPTH>>1)
-#define BOARD_SPI_RX_FIFO_LVL		(MXC_CFG_SPIM_FIFO_DEPTH>>1)
+#define BOARD_SPI_FIFO_TRIGGER_LVL      2
 
 
 
@@ -64,6 +64,7 @@
 #define BOARD_EVENT_MAX35104 	(1<<1)
 #define BOARD_EVENT_BUTTON		(1<<2)
 #define BOARD_EVENT_UART		(1<<3)
+
 
 #ifdef ENABLE_LP1_IDLE
 __STATIC_INLINE uint32_t board_timestamp(void)

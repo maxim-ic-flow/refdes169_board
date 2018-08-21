@@ -127,13 +127,66 @@ void vApplicationIdleHook( void )
     LP_EnterLP2();
 }
 
-#ifdef ENABLE_LP1_IDLE
+static uint32_t s_sampling_prescale;
 
 void RTC0_IRQHandler( void )
 {
+    // WARNING:  breakpoints in this function will break the sample clock
+    // The RTC keeps counting during a breakpoint.
+    uint32_t compare = RTC_GetCompare(0);
+#ifdef BOARD_DEBUG
+    // This code deals with RTC overflows that happen when the 
+    // processor is halted by breakpoints outside of this function
+    uint32_t count = RTC_GetCount();
+    if( (count - compare) < s_sampling_prescale )
+    {
+        compare = s_sampling_prescale + compare;
+    }
+    else
+    {
+         compare = s_sampling_prescale + count;
+    }
+#endif     
+    RTC_SetCompare( 0, compare );
     RTC_ClearFlags( MXC_F_RTC_FLAGS_COMP0 );
     flow_sample_clock();
 }
+
+uint8_t board_get_sampling_frequency( void )
+{
+    return RTC_HZ / s_sampling_prescale;
+}
+
+void board_set_sampling_frequency( uint8_t freq_hz )
+{
+    // ideally freq_hz = 2^N, where N is a positive integer
+    while( freq_hz > 128 ); // anything greater than this probably won't work
+
+    if(  freq_hz )
+    {
+        board_disable_sample_timer();
+        s_sampling_prescale = RTC_HZ / freq_hz;
+        RTC_SetCompare( 0, RTC_GetCompare(0) + s_sampling_prescale );
+        board_enable_sample_timer();
+    }
+    else
+    {
+        board_disable_sample_timer();
+    }
+}
+
+void board_disable_sample_timer( void )
+{
+    RTC_DisableINT( MXC_F_RTC_INTEN_COMP0 );
+}
+
+void board_enable_sample_timer( void )
+{
+    RTC_EnableINT( MXC_F_RTC_INTEN_COMP0 );
+    RTC_Start();   
+}
+
+#ifdef ENABLE_LP1_IDLE  // RTOS tick clock comes from the RTC
 
 void RTC1_IRQHandler( void )
 {
@@ -141,34 +194,13 @@ void RTC1_IRQHandler( void )
     xPortSysTickHandler();
 }
 
-
 void vPortSetupTimerInterrupt( void )
 {
-    LP_ClearWakeUpConfig();
-    LP_ConfigRTCWakeUp( 1, 1, 0, 0 );  // enable RTC COMP1 & COMP0 wake-ups
-    {
-        rtc_cfg_t cfg =
-        {
-            .snoozeMode = RTC_SNOOZE_MODE_A,
-            .snoozeCount = RTC_HZ / configTICK_RATE_HZ,
-            .compareCount[0] = RTC_HZ / FLOW_SAMPLE_CLOCK_HZ;
-        };
-        if( RTC_Init( &cfg ) != E_NO_ERROR )
-            while( 1 );
-        RTC_EnableINT( MXC_F_RTC_INTEN_COMP1 | MXC_F_RTC_INTEN_COMP0 );
-        NVIC_SetPriority( RTC1_IRQn, INTERRUPT_PRIORITY_FREERTOS_TIMER );
-        NVIC_EnableIRQ( RTC1_IRQn );
-        RTC_Start();
-    }
-}
-
-#else // ENABLE_LP1_IDLE
-
-void TMR1_IRQHandler( void )
-{
-    TMR32_ClearFlag( MXC_TMR1 );
-    flow_sample_clock();
-
+    NVIC_SetPriority( RTC1_IRQn, INTERRUPT_PRIORITY_FREERTOS_TIMER );
+    NVIC_EnableIRQ( RTC1_IRQn );
+    RTC_EnableINT( MXC_F_RTC_INTEN_COMP1 );
+    MXC_PWRSEQ->msk_flags |= MXC_F_PWRSEQ_FLAGS_RTC_CMPR1;
+    RTC_Start();
 }
 
 #endif // ENABLE_LP1_IDLE
@@ -177,6 +209,8 @@ void TMR1_IRQHandler( void )
 void board_init( void )
 {
     // brings up board-specific ports
+    LP_ClearWakeUpConfig();
+
 
     SYS_IOMAN_UseVDDIOH( &max3510x_spi );
     SYS_IOMAN_UseVDDIOH( &s_tdc_interrupt );
@@ -194,6 +228,21 @@ void board_init( void )
     GPIO_Config( &s_gpio_cfg_button_s1 );
     GPIO_Config( &s_gpio_cfg_button_s2 );
 
+    {
+        rtc_cfg_t cfg =
+        {
+            .snoozeMode = RTC_SNOOZE_MODE_A,
+            .snoozeCount = RTC_HZ / configTICK_RATE_HZ
+        };
+        if( RTC_Init( &cfg ) != E_NO_ERROR )
+            while( 1 );
+        NVIC_SetPriority( RTC0_IRQn, INTERRUPT_PRIORITY_FREERTOS_TIMER );
+        RTC_GetFlags();
+        RTC_ClearFlags(RTC_FLAGS_CLEAR_ALL);
+        NVIC_ClearPendingIRQ(RTC0_IRQn);
+        NVIC_EnableIRQ( RTC0_IRQn );
+        MXC_PWRSEQ->msk_flags |= MXC_F_PWRSEQ_FLAGS_RTC_CMPR0;
+    }
     FLC_Init();
 
 
@@ -211,20 +260,6 @@ void board_init( void )
 //			| (BOARD_SPI_RX_TRIGGER_LEVEL << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS) | (BOARD_SPI_TX_TRIGGER_LEVEL << MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL_POS);
     }
 
-#ifndef ENABLE_LP1_IDLE
-    {
-        // Timer 1 provides the flow sample clock when operating in LP2 mode
-        tmr32_cfg_t cont_cfg;
-        cont_cfg.mode = TMR32_MODE_CONTINUOUS;
-        cont_cfg.polarity = TMR_POLARITY_INIT_LOW;  //start GPIO low
-        cont_cfg.compareCount = configCPU_CLOCK_HZ / FLOW_SAMPLE_CLOCK_HZ;
-        while( TMR_Init( MXC_TMR1, TMR_PRESCALE_DIV_2_0, NULL ) != E_NO_ERROR );
-        TMR32_Config( MXC_TMR1, &cont_cfg );
-    }
-    NVIC_SetPriority( TMR1_0_IRQn, INTERRUPT_PRIORITY_DEFAULT );
-    TMR32_EnableINT( MXC_TMR1 );
-    NVIC_EnableIRQ( TMR1_0_IRQn );
-#endif
     {
         // initialize the UART connected to the PICO USB serial port
         uart_cfg_t cfg;
@@ -384,12 +419,4 @@ void board_final( void )
     NVIC_EnableIRQ( GPIO_P0_IRQn );
 }
 
-void board_disable_sample_timer( void )
-{
-    TMR32_Stop( MXC_TMR1 );
-}
 
-void board_enable_sample_timer( void )
-{
-    TMR32_Start( MXC_TMR1 );
-}

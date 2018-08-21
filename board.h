@@ -94,6 +94,8 @@ void board_led( uint8_t ndx, bool on );
 
 void board_init( void );
 void board_final( void );
+void board_set_sampling_frequency( uint8_t freq_hz );
+uint8_t board_get_sampling_frequency( void );
 uint32_t board_sleep( void );
 	
 

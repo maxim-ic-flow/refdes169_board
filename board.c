@@ -206,7 +206,8 @@ void board_init( void )
 			while( 1 );	// initialization failed -- step into CSL to determine the reason
 		}
 		BOARD_TDC_SPI->mstr_cfg = (BOARD_TDC_SPI->mstr_cfg & ~MXC_F_SPIM_MSTR_CFG_PAGE_SIZE) | MXC_S_SPIM_MSTR_CFG_PAGE_4B;
-		BOARD_TDC_SPI->fifo_ctrl = (BOARD_TDC_SPI->fifo_ctrl & ~MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL) | (3 << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS);
+		BOARD_TDC_SPI->fifo_ctrl = (BOARD_TDC_SPI->fifo_ctrl & ~(MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL|MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL)) 
+			| (3 << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS) | (3 << MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL_POS);
 	}
 
 #ifndef ENABLE_LP1_IDLE
@@ -386,6 +387,7 @@ void board_disable_sample_timer(void)
 {
 	TMR32_Stop(MXC_TMR1);
 }
+
 void board_enable_sample_timer(void)
 {
 	TMR32_Start(MXC_TMR1);

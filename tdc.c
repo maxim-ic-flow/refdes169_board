@@ -23,51 +23,107 @@
 
 #define SPI_END				0xF000
 
-static tdc_result_t			s_result;
+enum _last_cmd_t 
+{
+	last_cmd_none,
+	last_cmd_tof_diff,
+	last_cmd_temperature
+}
+static s_last_cmd;
+
+static tdc_tof_result_t             s_tof_result;
+static tdc_temperature_result_t		s_temperature_result;
+
 static SemaphoreHandle_t    s_spi_semaphore;
 
-static const uint32_t s_pmu_tdc_read_descriptor[] =
+static const uint32_t s_tof_diff_descriptor[] =
 { 
 	// get TDC status register
 	PMU_TRANSFER(PMU_NO_INTERRUPT,PMU_NO_STOP,
 				 PMU_TX_READ_16_BIT, PMU_TX_READ_NO_INC,
 				 PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_INC,
-				 sizeof(s_result.status), 
-				 (uint32_t)&s_result.status,
+				 sizeof(s_tof_result.status), 
+				 (uint32_t)&s_tof_result.status,
 				 (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_16,
-				 BOARD_SPI_FIFO_PMU_FLAG, sizeof(s_result.status) ),
+				 BOARD_SPI_RX_FIFO_PMU_FLAG, sizeof(s_tof_result.status) ),
 	// get TDC TOF data
 	PMU_TRANSFER(PMU_INTERRUPT,PMU_STOP,
 				 PMU_TX_READ_32_BIT, PMU_TX_READ_NO_INC,
 				 PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_INC,
-				 sizeof(s_result.tof), 
-				 (uint32_t)&s_result.tof,
+				 sizeof(s_tof_result.tof), 
+				 (uint32_t)&s_tof_result.tof,
 				 (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
-				 BOARD_SPI_FIFO_PMU_FLAG, MXC_CFG_SPIM_FIFO_DEPTH ),
+				 BOARD_SPI_RX_FIFO_PMU_FLAG, sizeof(s_tof_result.tof) ),
 };
 
-static const uint16_t s_read_results[] =
+static const uint32_t s_temperature_descriptor[] =
+{ 
+	// get TDC status register
+	PMU_TRANSFER(PMU_NO_INTERRUPT,PMU_NO_STOP,
+				 PMU_TX_READ_16_BIT, PMU_TX_READ_NO_INC,
+				 PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_INC,
+				 sizeof(s_tof_result.status), 
+				 (uint32_t)&s_tof_result.status,
+				 (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_16,
+				 BOARD_SPI_RX_FIFO_PMU_FLAG, sizeof(s_tof_result.status) ),
+	// get TDC temperature data
+	PMU_TRANSFER(PMU_INTERRUPT,PMU_STOP,
+				 PMU_TX_READ_32_BIT, PMU_TX_READ_NO_INC,
+				 PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_INC,
+				 sizeof(s_temperature_result), 
+				 (uint32_t)&s_temperature_result,
+				 (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
+				 BOARD_SPI_RX_FIFO_PMU_FLAG, sizeof(s_temperature_result) )
+};
+
+static const uint16_t s_read_tof_diff_results[] =
 {
 	// read TDC status register
 	SPI_HEADER(SPI_DIR_TX,SPI_BYTES,1,SPI_SS_ASSERT),							// send read command
 	SPI_END | MAX3510X_OPCODE_READ_REG(MAX3510X_REG_INTERRUPT_STATUS),			// status register address
 	SPI_HEADER(SPI_DIR_RX,SPI_BYTES,2,SPI_SS_DISASSERT),						// read status value
-	// read relevant measurement registers
+	// read relevant TOF egisters
 	SPI_HEADER(SPI_DIR_TX,SPI_BYTES,1,SPI_SS_ASSERT),							// send read command
 	SPI_END | MAX3510X_OPCODE_READ_REG(MAX3510X_REG_WVRUP),						// address of register array of interest
-	SPI_HEADER(SPI_DIR_RX,SPI_PAGES,sizeof(s_result.tof)>>2,SPI_SS_DISASSERT),         // read in register values
+	SPI_HEADER(SPI_DIR_RX,SPI_PAGES,sizeof(s_tof_result.tof)>>2,SPI_SS_DISASSERT),  // read in register values
 };
 
-static const uint32_t s_pmu_tdc_write_descriptor[] =
+static const uint16_t s_read_temperature_results[] =
 {
-	// send the s_read_results command sequence to the TDC and stop
-	PMU_MOVE(PMU_NO_INTERRUPT,PMU_STOP,
-			 PMU_MOVE_READ_32_BIT, PMU_MOVE_READ_INC,
-			 PMU_MOVE_WRITE_32_BIT, PMU_MOVE_WRITE_NO_INC,
-			 PMU_MOVE_NO_CONT, 
-			 sizeof(s_read_results), 
-			 (uint32_t)BOARD_TDC_SPI_FIFO, 
-			 (uint32_t)s_read_results)
+	// read TDC status register
+	SPI_HEADER(SPI_DIR_TX,SPI_BYTES,1,SPI_SS_ASSERT),							// send read command
+	SPI_END | MAX3510X_OPCODE_READ_REG(MAX3510X_REG_INTERRUPT_STATUS),			// status register address
+	SPI_HEADER(SPI_DIR_RX,SPI_BYTES,2,SPI_SS_DISASSERT),						// read status value
+	// read T1 temperature registers
+	SPI_HEADER(SPI_DIR_TX,SPI_BYTES,1,SPI_SS_ASSERT),							// send read command
+	SPI_END | MAX3510X_OPCODE_READ_REG(MAX3510X_REG_T1INT),						// T1 register
+	SPI_HEADER(SPI_DIR_RX,SPI_BYTES,sizeof(s_temperature_result.temperature[0]),SPI_SS_DISASSERT),  // read in register values
+    // read T2 temperature registers
+	SPI_HEADER(SPI_DIR_TX,SPI_BYTES,1,SPI_SS_ASSERT),							// send read command
+	SPI_END | MAX3510X_OPCODE_READ_REG(MAX3510X_REG_T2INT),						// T2 register
+	SPI_HEADER(SPI_DIR_RX,SPI_BYTES,sizeof(s_temperature_result.temperature[1]),SPI_SS_DISASSERT),  // read in register values
+};
+
+static const uint32_t s_toff_diff_write_descriptor[] =
+{
+	PMU_TRANSFER(PMU_NO_INTERRUPT,PMU_STOP,
+				 PMU_TX_READ_32_BIT, PMU_TX_READ_INC,
+				 PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_NO_INC,
+				 sizeof(s_read_tof_diff_results), 
+				 (uint32_t)BOARD_TDC_SPI_FIFO,
+				 (uint32_t)s_read_tof_diff_results,
+				 BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_tof_diff_results) )
+};
+
+static const uint32_t s_temperature_write_descriptor[] =
+{
+	PMU_TRANSFER(PMU_NO_INTERRUPT,PMU_STOP,
+				 PMU_TX_READ_32_BIT, PMU_TX_READ_INC,
+				 PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_NO_INC,
+				 sizeof(s_read_temperature_results), 
+				 (uint32_t)BOARD_TDC_SPI_FIFO,
+				 (uint32_t)s_read_temperature_results,
+				 BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_temperature_results) )
 };
 
 
@@ -111,19 +167,28 @@ static void pmu_write_complete_cb(int status)
 void tdc_interrupt( void *pv )
 {
 	BaseType_t woken = pdFALSE; 
-	PMU_Start(BOARD_PMU_CHANNEL_TDC_SPI_READ, s_pmu_tdc_read_descriptor, pmu_write_complete_cb );
-	PMU_Start(BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_pmu_tdc_write_descriptor, NULL );
+	if( s_last_cmd == last_cmd_tof_diff )
+	{
+		PMU_Start(BOARD_PMU_CHANNEL_TDC_SPI_READ, s_tof_diff_descriptor, pmu_write_complete_cb );
+		PMU_Start(BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_toff_diff_write_descriptor, NULL );
+	}
+	else
+	{
+		PMU_Start(BOARD_PMU_CHANNEL_TDC_SPI_READ, s_temperature_descriptor, pmu_write_complete_cb );
+		PMU_Start(BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_temperature_write_descriptor, NULL );
+	}
 	xSemaphoreTakeFromISR(s_spi_semaphore, &woken ); 
 	portYIELD_FROM_ISR(woken);
+	s_last_cmd = last_cmd_none;
 }
 
-void tdc_get_tof_result( tdc_result_t * p_result )
+void tdc_get_tof_result( tdc_tof_result_t * p_result )
 {
-	uint32_t *p_src = (uint32_t*)&s_result;
+	uint32_t *p_src = (uint32_t*)&s_tof_result;
 	uint32_t *p_dst = (uint32_t*)p_result;
 	// adjust for endian difference between the TDC and the micro
 #if !defined(__BIG_ENDIAN)
-	for(uint32_t i=0;i<sizeof(tdc_result_t)/sizeof(uint32_t);i++)
+	for(uint32_t i=0;i<sizeof(s_tof_result)/sizeof(uint32_t);i++)
 		p_dst[i] = __REV16(p_src[i]);
 #endif
 }
@@ -869,9 +934,33 @@ void tdc_cmd_bpcal( void )
 	unlock();
 }
 
+void tdc_start_event_engine( bool tof, bool temp )
+{
+	lock();
+	if( tof && temp )
+	{
+		max3510x_event_timing( NULL, max3510x_event_timing_mode_tof_temp );
+	}
+	else if( tof )
+	{
+		max3510x_event_timing( NULL, max3510x_event_timing_mode_tof );
+
+	}
+	unlock();
+}
+
+void tdc_cmd_temperature( void )
+{
+	lock();
+	s_last_cmd = last_cmd_tof_diff;
+	max3510x_temperature( NULL );
+	unlock();
+}
+
 void tdc_cmd_tof_diff( void )
 {
 	lock();
+	s_last_cmd = last_cmd_tof_diff;
 	max3510x_tof_diff(NULL);
 	unlock();
 }

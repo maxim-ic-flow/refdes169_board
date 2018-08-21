@@ -2,60 +2,50 @@
 #define _TDC_H_
 
 #include "max3510x.h"
-#include "arm_math.h"
 
 #pragma pack(1)
 
-typedef struct _tdc_tof_native_t
+typedef struct _tof_result_t
 {
 	max3510x_measurement_t	up;			// 30 bytes
 	max3510x_measurement_t	down;		// 30 bytes
 	max3510x_fixed_t		tof_diff;	// 4 bytes
-}
-tdc_tof_native_t;
-
-typedef struct _tdc_tof_fp_measurement_t
-{
-	uint8_t		t1_ideal;
-	uint8_t		t1_t2;
-	double_t	hit[6];
-	double_t	average; 
-}
-tdc_tof_fp_measurement_t;
-
-typedef struct _tdc_tof_fp_t
-{
-	tdc_tof_fp_measurement_t	up;
-	tdc_tof_fp_measurement_t	down;
-	double_t					tof_diff;
-}
-tdc_tof_fp_t;
-
-typedef union _tdc_tof_t
-{
-	// size must be evenly divisible by 4 bytes
-	// so that tdc_get_tof_result() works correctly
-
-	tdc_tof_native_t 	native;
-	tdc_tof_fp_t		fp;
 
 }
-tdc_tof_t;
+tof_result_t;
 
-typedef struct _tdc_result_t
+typedef struct _tdc_tof_result_t
 {
+	// evenly divisable by 4
     uint16_t                status;
-	tdc_tof_t				tof;
+	tof_result_t			tof;
     uint16_t                pad;
 }
+tdc_tof_result_t;
+
+typedef struct _tdc_temperature_result_t
+{
+    uint16_t                status;
+	max3510x_fixed_t		temperature[2];
+    uint16_t                pad;
+}
+tdc_temperature_result_t;
+
+typedef union _tdc_result_t
+{
+	uint16_t                	status;
+	tdc_temperature_result_t	temperature_result;
+	tdc_tof_result_t 			tof_result;
+}
 tdc_result_t;
+
 
 #pragma pack()
 
 void tdc_interrupt(void*);
 
 void tdc_init(void);
-void tdc_get_tof_result( tdc_result_t * p_result );
+void tdc_get_tof_result( tdc_tof_result_t * p_result );
 void tdc_configure(max3510x_registers_t *p_config);
 
 void tdc_set_sfreq( uint16_t sfreq );
@@ -160,8 +150,10 @@ void tdc_set_wd( uint16_t v );
 uint16_t tdc_get_wd( void );
 void tdc_cmd_bpcal( void );
 void tdc_cmd_tof_diff( void );
+void tdc_cmd_temperature( void );
 void tdc_cmd_tof_up( void );
 void tdc_cmd_tof_down( void );
+void tdc_start_event_engine( bool tof, bool temp );
 
 void tdc_cmd_read_config(  max3510x_registers_t *p_config );
 

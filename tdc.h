@@ -25,17 +25,27 @@ tdc_tof_result_t;
 
 typedef struct _tdc_temperature_result_t
 {
+    // evenly divisable by 4
     uint16_t                status;
     max3510x_fixed_t	    temperature[2];
     uint16_t                pad;
 }
 tdc_temperature_result_t;
 
+typedef struct _tdc_calibration_result_t
+{
+	uint16_t				status;
+	max3510x_fixed_t	    calibration;
+	uint16_t                pad;
+}
+tdc_calibration_result_t;
+
 typedef union _tdc_result_t
 {
     uint16_t                	status;
-    tdc_temperature_result_t	temperature_result;
-    tdc_tof_result_t 		    tof_result;
+    tdc_temperature_result_t	temperature;
+    tdc_tof_result_t 		    tof;
+	tdc_calibration_result_t	calibration;
 }
 tdc_result_t;
 
@@ -47,7 +57,8 @@ void tdc_interrupt( void* );
 void tdc_init( void );
 void tdc_get_tof_result( tdc_tof_result_t * p_result );
 void tdc_get_temperature_result( tdc_temperature_result_t * p_result );
-void tdc_configure( max3510x_registers_t * p_config );
+void tdc_get_calibration_result( tdc_calibration_result_t *p_result );
+void tdc_configure( const max3510x_registers_t * p_config );
 
 void tdc_set_sfreq( uint16_t sfreq );
 uint16_t tdc_get_sfreq( void );
@@ -152,10 +163,29 @@ uint16_t tdc_get_wd( void );
 void tdc_cmd_bpcal( void );
 void tdc_cmd_tof_diff( void );
 void tdc_cmd_temperature( void );
+void tdc_cmd_calibrate( void );
 void tdc_cmd_tof_up( void );
 void tdc_cmd_tof_down( void );
 void tdc_start_event_engine( bool tof, bool temp );
-
+void tdc_cmd_initialize( void );
+void tdc_cmd_halt( void );
 void tdc_cmd_read_config(  max3510x_registers_t * p_config );
+
+void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down );
+void tdc_read_thresholds( uint8_t *p_up, uint8_t *p_down );
+
+typedef enum _tdc_last_cmd_t
+{
+    tdc_cmd_context_none,
+    tdc_cmd_context_tof_diff,
+	tdc_cmd_context_tof_up,
+	tdc_cmd_context_tof_down,
+    tdc_cmd_context_temperature,
+	tdc_cmd_context_calibrate
+}
+tdc_cmd_context_t;
+
+tdc_cmd_context_t tdc_cmd_context( void );
+
 
 #endif

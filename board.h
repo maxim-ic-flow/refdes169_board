@@ -56,7 +56,7 @@
 #define BOARD_MAX3510X_CLOCK_FREQ               4000000 // nominal frequency of the max35104's high speed crystal
 
 #define BOARD_UART_TX_FIFO_LVL		(MXC_UART_FIFO_DEPTH>>1)
-#define BOARD_SPI_FIFO_TRIGGER_LVL      2
+
 
 
 
@@ -96,6 +96,7 @@ void board_init( void );
 void board_final( void );
 void board_set_sampling_frequency( uint8_t freq_hz );
 uint8_t board_get_sampling_frequency( void );
+
 uint32_t board_sleep( void );
 	
 

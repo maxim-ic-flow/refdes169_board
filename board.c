@@ -255,9 +255,11 @@ void board_init( void )
         {
             while( 1 ); // initialization failed -- step into CSL to determine the reason
         }
+
         BOARD_TDC_SPI->mstr_cfg = (BOARD_TDC_SPI->mstr_cfg & ~MXC_F_SPIM_MSTR_CFG_PAGE_SIZE) | MXC_S_SPIM_MSTR_CFG_PAGE_4B;
-//		BOARD_TDC_SPI->fifo_ctrl = (BOARD_TDC_SPI->fifo_ctrl & ~(MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL|MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL))
-//			| (BOARD_SPI_RX_TRIGGER_LEVEL << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS) | (BOARD_SPI_TX_TRIGGER_LEVEL << MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL_POS);
+		BOARD_TDC_SPI->fifo_ctrl = (BOARD_TDC_SPI->fifo_ctrl & ~(MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL|MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL)) |
+			(1 << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS) |
+			(MXC_CFG_SPIM_FIFO_DEPTH-1 << MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL_POS);
     }
 
     {
@@ -323,6 +325,8 @@ void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t
     req.width = SPIM_WIDTH_1;
     req.len = count;
 
+	uint32_t fifo_ctrl = BOARD_TDC_SPI->fifo_ctrl;  // SPIM_Trans steps on fifo settings
+
     if( (SPIM_Trans( BOARD_TDC_SPI, &req )) != count )
     {
         while( 1 ); // fatal error -- step into CSL to determine reason
@@ -333,6 +337,7 @@ void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t
     {
         // fatal
     }
+	BOARD_TDC_SPI->fifo_ctrl = fifo_ctrl;
 }
 
 bool board_flash_write( const void * p_data, uint16_t size )

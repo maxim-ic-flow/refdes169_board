@@ -23,20 +23,14 @@
 
 #define SPI_END				0xF000
 
-enum _last_cmd_t
-{
-    last_cmd_none,
-    last_cmd_tof_diff,
-    last_cmd_temperature
-}
-static s_last_cmd;
+
+static tdc_cmd_context_t s_last_cmd;
 
 static tdc_tof_result_t             s_tof_result;
 static tdc_temperature_result_t	    s_temperature_result;
+static tdc_calibration_result_t		s_calibration_result;
 
-static SemaphoreHandle_t    s_spi_semaphore;
 
-#define NOPAD(x)	(sizeof(x)&0xFFFFFFFC)
 
 static const uint32_t s_tof_diff_descriptor[] =
 {
@@ -45,7 +39,7 @@ static const uint32_t s_tof_diff_descriptor[] =
                   PMU_TX_READ_16_BIT, PMU_TX_READ_NO_INC,
                   PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_INC,
                   sizeof(s_tof_result.status) + sizeof(s_tof_result.tof),
-                  (uint32_t)&s_tof_result.status,
+                  (uint32_t)&s_tof_result,
                   (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
                   BOARD_SPI_RX_FIFO_PMU_FLAG, 2 )
 };
@@ -62,12 +56,24 @@ static const uint32_t s_temperature_descriptor[] =
                   BOARD_SPI_RX_FIFO_PMU_FLAG, 2 )
 };
 
+static const uint32_t s_calibration_descriptor[] =
+{
+    // PMU descriptor to read out the SPI data from the TDC's calibration registers
+    PMU_TRANSFER( PMU_INTERRUPT, PMU_STOP,
+                  PMU_TX_READ_16_BIT, PMU_TX_READ_NO_INC,
+                  PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_INC,
+                  sizeof(s_calibration_result.status) + sizeof(s_calibration_result.calibration),
+                  (uint32_t)&s_calibration_result,
+                  (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
+                  BOARD_SPI_RX_FIFO_PMU_FLAG, 2 )
+};
+
 static const uint16_t s_read_tof_diff_results[] =
 {
     // SPI meta and data to read out the TDC's TOF registers
     SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           // send read command
     SPI_END | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_INTERRUPT_STATUS ),          // status register address
-    SPI_HEADER( SPI_DIR_RX, SPI_BYTES, 2, SPI_SS_DISASSERT ),                        // read status value
+    SPI_HEADER( SPI_DIR_RX, SPI_BYTES, sizeof(s_tof_result.status), SPI_SS_DISASSERT ),
                                                                                      // read relevant TOF egisters
     SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           // send read command
     SPI_END | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_WVRUP ),                     // address of register array of interest
@@ -79,9 +85,9 @@ static const uint16_t s_read_temperature_results[] =
     // SPI meta and data to read out the TDC's temperature registers
     SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           // send read command
     SPI_END | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_INTERRUPT_STATUS ),          // status register address
-    SPI_HEADER( SPI_DIR_RX, SPI_BYTES, 2, SPI_SS_DISASSERT ),                        // read status value
-                                                                                     // read T1 temperature registers
-    SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           // send read command
+    SPI_HEADER( SPI_DIR_RX, SPI_BYTES, sizeof(s_temperature_result.status), SPI_SS_DISASSERT ),
+
+	SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           // send read command
     SPI_END | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_T1INT ),                     // T1 register
     SPI_HEADER( SPI_DIR_RX, SPI_BYTES, sizeof(s_temperature_result.temperature[0]), SPI_SS_DISASSERT ),  // read in register values
                                                                                                          // read T2 temperature registers
@@ -90,12 +96,24 @@ static const uint16_t s_read_temperature_results[] =
     SPI_HEADER( SPI_DIR_RX, SPI_BYTES, sizeof(s_temperature_result.temperature[1]), SPI_SS_DISASSERT ),  // read in register values
 };
 
+
+static const uint16_t s_read_calibration_results[] =
+{
+    // SPI meta and data to read out the TDC's calibration registers
+    SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           	// send read command
+    SPI_END | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_INTERRUPT_STATUS ),          		// status register address
+    SPI_HEADER( SPI_DIR_RX, SPI_BYTES, 2, SPI_SS_DISASSERT ),                        	// read status value
+																						
+    SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                           	// send read command
+    SPI_END | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_CALIBRATIONINT ),                  // calibration register
+    SPI_HEADER( SPI_DIR_RX, SPI_BYTES, sizeof(s_calibration_result.calibration), SPI_SS_DISASSERT ),// read in register values
+};
 static const uint32_t s_toff_diff_write_descriptor[] =
 {
     // PMU descriptor that sends SPI commands read out the TDC's TOF registers
     PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_STOP,
-                  PMU_TX_READ_32_BIT, PMU_TX_READ_INC,
-                  PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_NO_INC,
+                  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+                  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
                   sizeof(s_read_tof_diff_results),
                   (uint32_t)BOARD_TDC_SPI_FIFO,
                   (uint32_t)s_read_tof_diff_results,
@@ -106,36 +124,45 @@ static const uint32_t s_temperature_write_descriptor[] =
 {
     // PMU descriptor that sends SPI commands read out the TDC's temperature registers
     PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_STOP,
-                  PMU_TX_READ_32_BIT, PMU_TX_READ_INC,
-                  PMU_TX_WRITE_32_BIT, PMU_TX_WRITE_NO_INC,
+                  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+                  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
                   sizeof(s_read_temperature_results),
                   (uint32_t)BOARD_TDC_SPI_FIFO,
                   (uint32_t)s_read_temperature_results,
                   BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_temperature_results) )
 };
 
+static const uint32_t s_calibration_write_descriptor[] =
+{
+    // PMU descriptor that sends SPI commands read out the TDC's temperature registers
+    PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_STOP,
+                  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+                  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
+                  sizeof(s_read_calibration_results),
+                  (uint32_t)BOARD_TDC_SPI_FIFO,
+                  (uint32_t)s_read_calibration_results,
+                  BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_calibration_results) )
+};
+
 
 static void unlock()
 {
-    xSemaphoreGive( s_spi_semaphore );
-    board_tdc_enable_interrupt();
+	flow_unlock();
 }
 
 static void lock()
 {
-    board_tdc_disable_interrupt();
-    xSemaphoreTake( s_spi_semaphore, portMAX_DELAY );
+	flow_lock();
 }
+
 
 void tdc_init( void )
 {
-    s_spi_semaphore = xSemaphoreCreateBinary();
     max3510x_reset( NULL );
     max3510x_wait_for_reset_complete( NULL );
-    unlock();
 }
 
-void tdc_configure( max3510x_registers_t * p_config )
+void tdc_configure( const max3510x_registers_t * p_config )
 {
     lock();
     max3510x_write_config( NULL, p_config );
@@ -147,7 +174,6 @@ void tdc_configure( max3510x_registers_t * p_config )
 static void pmu_write_complete_cb( int status )
 {
     BaseType_t woken = pdFALSE;
-    xSemaphoreGiveFromISR( s_spi_semaphore, &woken );
     portYIELD_FROM_ISR( woken );
     flow_sample_complete();
 }
@@ -155,24 +181,89 @@ static void pmu_write_complete_cb( int status )
 void tdc_interrupt( void * pv )
 {
     BaseType_t woken = pdFALSE;
-    if( s_last_cmd == last_cmd_tof_diff )
-    {
-        PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_READ, s_tof_diff_descriptor, pmu_write_complete_cb );
-        PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_toff_diff_write_descriptor, NULL );
-    }
-    else
-    {
-        PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_READ, s_temperature_descriptor, pmu_write_complete_cb );
-        PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_temperature_write_descriptor, NULL );
-    }
-    xSemaphoreTakeFromISR( s_spi_semaphore, &woken );
+	switch( s_last_cmd  )
+	{
+		case tdc_cmd_context_tof_up:
+        case tdc_cmd_context_tof_down:
+        case tdc_cmd_context_tof_diff:
+		{
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_READ, s_tof_diff_descriptor, pmu_write_complete_cb );
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_toff_diff_write_descriptor, NULL );
+			break;
+		}
+		case tdc_cmd_context_temperature:
+		{
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_READ, s_temperature_descriptor, pmu_write_complete_cb );
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_temperature_write_descriptor, NULL );
+			break;
+		}
+		case tdc_cmd_context_calibrate:
+		{
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_READ, s_calibration_descriptor, pmu_write_complete_cb );
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_calibration_write_descriptor, NULL );
+			break;
+		}
+	}
     portYIELD_FROM_ISR( woken );
-    s_last_cmd = last_cmd_none;
+}
+
+void tdc_read_thresholds( uint8_t *p_up, uint8_t *p_down )
+{
+	lock();
+	max3510x_read_thresholds(NULL, p_up, p_down);
+	unlock();
+}
+
+
+
+void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down )
+{
+	// adjusts early-edge offsets and sends a TOF_DIFF command
+	// 
+	// return offsets are implicity set to zero 
+
+	static uint16_t write_offsets[] =
+	{
+		// SPI meta and data to set early edge thresholds and start a TOF_DIFF
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                          	// send write command
+		SPI_END | MAX3510X_OPCODE_WRITE_REG( MAX3510X_REG_TOF6 ),			          		// comparator offset register address
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 2*sizeof(uint16_t), SPI_SS_DISASSERT ),          // send 4 bytes worth of offset info
+		0,																					// up early offset/return
+		0,																					// down early offset/resturn
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_DISASSERT ),   						// send TOF_DIF command
+		SPI_END | MAX3510X_OPCODE_TOF_DIFF													
+	};
+	static uint16_t * const p_offset = &write_offsets[3];
+	static const uint32_t measure_descriptor[] =
+	{
+		// PMU descriptor that sends SPI commands read out the TDC's TOF registers
+		PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_STOP,
+				  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+				  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
+				  sizeof(write_offsets),
+				  (uint32_t)BOARD_TDC_SPI_FIFO,
+				  (uint32_t)write_offsets,
+				  BOARD_SPI_TX_FIFO_PMU_FLAG, 2 )
+	};
+	p_offset[0] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF6_C_OFFSETUP, offset_up ));
+	p_offset[1] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF7_C_OFFSETDN, offset_down ));
+	s_last_cmd = tdc_cmd_context_tof_diff;
+	PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, measure_descriptor, NULL );
 }
 
 void tdc_get_tof_result( tdc_tof_result_t * p_result )
 {
     uint32_t * p_src = (uint32_t*)&s_tof_result;
+    uint32_t * p_dst = (uint32_t*)p_result;
+    // adjust for endian difference between the TDC and the micro
+#if !defined(__BIG_ENDIAN)
+    for( uint32_t i = 0; i < sizeof(s_tof_result) / sizeof(uint32_t); i++ ) p_dst[i] = __REV16( p_src[i] );
+#endif
+}
+
+void tdc_get_calibration_result( tdc_calibration_result_t *p_result )
+{
+    uint32_t * p_src = (uint32_t*)&s_calibration_result;
     uint32_t * p_dst = (uint32_t*)p_result;
     // adjust for endian difference between the TDC and the micro
 #if !defined(__BIG_ENDIAN)
@@ -946,10 +1037,18 @@ void tdc_start_event_engine( bool tof, bool temp )
     unlock();
 }
 
+void tdc_cmd_calibrate( void )
+{
+    lock();
+    s_last_cmd = tdc_cmd_context_calibrate;
+    max3510x_calibrate( NULL );
+    unlock();
+}
+
 void tdc_cmd_temperature( void )
 {
     lock();
-    s_last_cmd = last_cmd_temperature;
+    s_last_cmd = tdc_cmd_context_temperature;
     max3510x_temperature( NULL );
     unlock();
 }
@@ -957,7 +1056,7 @@ void tdc_cmd_temperature( void )
 void tdc_cmd_tof_diff( void )
 {
     lock();
-    s_last_cmd = last_cmd_tof_diff;
+    s_last_cmd = tdc_cmd_context_tof_diff;
     max3510x_tof_diff( NULL );
     unlock();
 }
@@ -972,6 +1071,7 @@ void tdc_cmd_read_config(  max3510x_registers_t * p_config )
 void tdc_cmd_tof_up( void )
 {
     lock();
+    s_last_cmd = tdc_cmd_context_tof_up;
     max3510x_tof_up( NULL );
     unlock();
 }
@@ -979,6 +1079,7 @@ void tdc_cmd_tof_up( void )
 void tdc_cmd_tof_down( void )
 {
     lock();
+    s_last_cmd = tdc_cmd_context_tof_down;
     max3510x_tof_down( NULL );
     unlock();
 }
@@ -1002,5 +1103,23 @@ static bool tdc_spi_test( void )
     max3510x_write_register( NULL, MAX3510X_REG_TOF_MEASUREMENT_DELAY, original );
     unlock();
     return true;
+}
+
+void tdc_cmd_halt( void )
+{
+	lock();
+	max3510x_halt(NULL);
+	unlock();
+}
+
+void tdc_cmd_initialize( void )
+{
+	lock();
+	max3510x_initialize(NULL);
+	unlock();
+}
+tdc_cmd_context_t tdc_cmd_context( void )
+{
+	return s_last_cmd;
 }
 

@@ -171,6 +171,7 @@ void board_set_sampling_frequency( uint8_t freq_hz )
     }
     else
     {
+        s_sampling_prescale = 0;
         board_disable_sample_timer();
     }
 }

@@ -5,6 +5,7 @@
 
 #include "pmu.h"
 #include "spim.h"
+#include "tmr.h"
 
 #include "tdc.h"
 #include "max3510x.h"
@@ -30,6 +31,7 @@ static tdc_tof_result_t             s_tof_result;
 static tdc_temperature_result_t	    s_temperature_result;
 static tdc_calibration_result_t		s_calibration_result;
 
+static uint16_t s_afe2;
 
 
 static const uint32_t s_tof_diff_descriptor[] =
@@ -162,12 +164,15 @@ void tdc_init( void )
     max3510x_wait_for_reset_complete( NULL );
 }
 
+
 void tdc_configure( const max3510x_registers_t * p_config )
 {
     lock();
     max3510x_write_config( NULL, p_config );
     unlock();
     tdc_cmd_bpcal();
+	s_afe2 = max3510x_read_register(NULL, MAX3510X_REG_AFE2 );
+    max3510x_write_register(NULL, MAX3510X_REG_AFE2, s_afe2 );
 }
 
 
@@ -178,17 +183,86 @@ static void pmu_write_complete_cb( int status )
     flow_sample_complete();
 }
 
-void tdc_interrupt( void * pv )
+static uint16_t s_unsquelch[] =
+{
+	// turn the AFE back on
+	SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                          	// send write command
+	SPI_END | MAX3510X_OPCODE_WRITE_REG( MAX3510X_REG_AFE1 ),			          		// to the AFE1 register
+	SPI_HEADER( SPI_DIR_TX, SPI_BYTES, sizeof(uint16_t), SPI_SS_DISASSERT ),          	// send 2 bytes
+	0
+};
+
+static const uint32_t s_pmu_descriptor_squelch[] =
+{
+	// start the squelch timer
+	PMU_WRITE( PMU_NO_INTERRUPT, PMU_NO_STOP,												
+		   PMU_WRITE_MASKED_WRITE_VALUE, MXC_TMR_GET_BASE(BOARD_SQUELCH_TIMER_NDX),
+		   MXC_F_TMR_CTRL_ENABLE0, MXC_F_TMR_CTRL_ENABLE0 ),
+	// wait for the timer to expire
+	PMU_WAIT( PMU_NO_INTERRUPT, PMU_NO_STOP, PMU_WAIT_SEL_0, 0, PMU_WAIT_IRQ_MASK2_SEL0_TMR0<<BOARD_SQUELCH_TIMER_NDX, 0 ),
+	// turn on the AFE
+    /*
+	PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_NO_STOP,
+			  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+			  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
+			  sizeof(s_unsquelch),
+			  (uint32_t)BOARD_TDC_SPI_FIFO,
+			  (uint32_t)s_unsquelch,
+			  BOARD_SPI_TX_FIFO_PMU_FLAG, 2 ),
+              */
+	// clear the timer interrupt flag
+	PMU_WRITE( PMU_NO_INTERRUPT, PMU_STOP,												
+		   PMU_WRITE_MASKED_WRITE_VALUE, MXC_TMR_GET_BASE(BOARD_SQUELCH_TIMER_NDX)+MXC_R_TMR_OFFS_INTFL,
+		   MXC_F_TMR_INTFL_TIMER0, MXC_F_TMR_INTFL_TIMER0 ),
+};
+
+void tdc_isr( void * pv )
 {
     BaseType_t woken = pdFALSE;
 	switch( s_last_cmd  )
 	{
 		case tdc_cmd_context_tof_up:
-        case tdc_cmd_context_tof_down:
+		case tdc_cmd_context_tof_down:
         case tdc_cmd_context_tof_diff:
 		{
 			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_READ, s_tof_diff_descriptor, pmu_write_complete_cb );
 			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_toff_diff_write_descriptor, NULL );
+			break;
+		}
+		case tdc_cmd_context_squelch:
+		{
+			static uint16_t spi_meta_tof_down[] =
+			{
+				// This sequence of SPI meta and data configure the TDC's comparator
+				// offsets, AFE state (on or off), and issue a TOP_UP command.
+				// 
+				SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 3, SPI_SS_DISASSERT ),                           // send read command
+				0xFF00 | MAX3510X_OPCODE_READ_REG( MAX3510X_REG_INTERRUPT_STATUS ),                 // status register (dummy read just to clear interrupt)
+				SPI_END | 0x00FF,
+				// turn off the AFE
+				//SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                          	// send write command
+				//SPI_END | MAX3510X_OPCODE_WRITE_REG( MAX3510X_REG_AFE1 ),			          		// to the AFE1 register
+				//SPI_HEADER( SPI_DIR_TX, SPI_BYTES, sizeof(uint16_t), SPI_SS_DISASSERT ),          	// send 2 bytes
+				//0, // AFE1 regsiter value set in code below
+				// SPI meta and data to set early edge thresholds and start a TOF_UP
+				SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_DISASSERT ),   						// send TOF_DWON command
+				SPI_END | MAX3510X_OPCODE_TOF_DOWN
+			};
+			static const uint32_t pmu_descriptor_tof_down[] =
+			{
+				PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_NO_STOP,
+					  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+					  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
+					  sizeof(spi_meta_tof_down),
+					  (uint32_t)BOARD_TDC_SPI_FIFO,
+					  (uint32_t)spi_meta_tof_down,
+					  BOARD_SPI_TX_FIFO_PMU_FLAG, 2 ),
+				PMU_JUMP( PMU_NO_INTERRUPT, PMU_NO_STOP, (uint32_t)s_pmu_descriptor_squelch )
+			};
+			s_last_cmd = tdc_cmd_context_tof_diff;
+//			spi_meta_tof_down[3] = MAX3510X_ENDIAN(s_afe2); //MAX3510X_ENDIAN((s_afe2 & ~MAX3510X_REG_MASK(AFE2_PGA)) | MAX3510X_BF(AFE2_PGA,DB_MIN));
+
+			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, pmu_descriptor_tof_down, NULL );
 			break;
 		}
 		case tdc_cmd_context_temperature:
@@ -203,8 +277,9 @@ void tdc_interrupt( void * pv )
 			PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, s_calibration_write_descriptor, NULL );
 			break;
 		}
+
 	}
-    portYIELD_FROM_ISR( woken );
+	portYIELD_FROM_ISR( woken );
 }
 
 void tdc_read_thresholds( uint8_t *p_up, uint8_t *p_down )
@@ -214,15 +289,42 @@ void tdc_read_thresholds( uint8_t *p_up, uint8_t *p_down )
 	unlock();
 }
 
-
-
-void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down )
+void tdc_measure( uint8_t offset_up, uint8_t offset_down )
 {
 	// adjusts early-edge offsets and sends a TOF_DIFF command
 	// 
 	// return offsets are implicity set to zero 
-
-	static uint16_t write_offsets[] =
+	static uint16_t spi_meta_tof_up[] =
+	{
+		// This sequence of SPI meta and data configure the TDC's comparator
+		// offsets, AFE state (on or off), and issue a TOP_UP command.
+		// 
+		// turn down the PGA
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                          	// send write command
+		SPI_END | MAX3510X_OPCODE_WRITE_REG( MAX3510X_REG_AFE2 ),			          		// to the AFE2 register in order to turn down PGA
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, sizeof(uint16_t), SPI_SS_DISASSERT ),          	// send 2 bytes
+		0, // AFE2 register value set in code below
+		// SPI meta and data to set early edge thresholds and start a TOF_UP
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                          	// send write command
+		SPI_END | MAX3510X_OPCODE_WRITE_REG( MAX3510X_REG_TOF6 ),			          		// comparator offset register address
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 2*sizeof(uint16_t), SPI_SS_DISASSERT ),          // send 4 bytes worth of offset info
+		0,																					// up early offset/return
+		0,																					// down early offset/resturn
+		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_DISASSERT ),   						// send TOF_UP command
+		SPI_END | MAX3510X_OPCODE_TOF_UP													
+	};
+	static const uint32_t pmu_descriptor_tof_up[] =
+	{
+		PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_NO_STOP,
+				  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
+				  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
+				  sizeof(spi_meta_tof_up),
+				  (uint32_t)BOARD_TDC_SPI_FIFO,
+				  (uint32_t)spi_meta_tof_up,
+				  BOARD_SPI_TX_FIFO_PMU_FLAG, 2 ),
+		PMU_JUMP( PMU_NO_INTERRUPT, PMU_NO_STOP, (uint32_t)s_pmu_descriptor_squelch )		// PMU to execute squelch
+	};
+	static uint16_t spi_meta_tof_diff[] =
 	{
 		// SPI meta and data to set early edge thresholds and start a TOF_DIFF
 		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_ASSERT ),                          	// send write command
@@ -233,22 +335,36 @@ void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down )
 		SPI_HEADER( SPI_DIR_TX, SPI_BYTES, 1, SPI_SS_DISASSERT ),   						// send TOF_DIF command
 		SPI_END | MAX3510X_OPCODE_TOF_DIFF													
 	};
-	static uint16_t * const p_offset = &write_offsets[3];
-	static const uint32_t measure_descriptor[] =
+	static const uint32_t pmu_descriptor_tof_diff[] =
 	{
 		// PMU descriptor that sends SPI commands read out the TDC's TOF registers
 		PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_STOP,
 				  PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
 				  PMU_TX_WRITE_16_BIT, PMU_TX_WRITE_NO_INC,
-				  sizeof(write_offsets),
+				  sizeof(spi_meta_tof_diff),
 				  (uint32_t)BOARD_TDC_SPI_FIFO,
-				  (uint32_t)write_offsets,
+				  (uint32_t)spi_meta_tof_diff,
 				  BOARD_SPI_TX_FIFO_PMU_FLAG, 2 )
 	};
-	p_offset[0] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF6_C_OFFSETUP, offset_up ));
-	p_offset[1] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF7_C_OFFSETDN, offset_down ));
-	s_last_cmd = tdc_cmd_context_tof_diff;
-	PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, measure_descriptor, NULL );
+	if( TMR32_GetCompare(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX)) )
+	{
+		// operating with squelch if the squelch timer is non-zero
+		s_last_cmd = tdc_cmd_context_squelch;
+		spi_meta_tof_up[7] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF6_C_OFFSETUP, offset_up ));
+		spi_meta_tof_up[8] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF7_C_OFFSETDN, offset_down ));
+		s_unsquelch[3] = MAX3510X_ENDIAN(s_afe2);
+  		spi_meta_tof_up[3] =  MAX3510X_ENDIAN(s_afe2);// MAX3510X_ENDIAN((s_afe2 & ~MAX3510X_REG_MASK(AFE2_PGA)) | MAX3510X_BF(AFE2_PGA,DB_MIN));
+
+		PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, pmu_descriptor_tof_up, NULL );
+	}
+	else
+	{
+		// standard non-squelched tof_diff method
+		s_last_cmd = tdc_cmd_context_tof_diff;
+		spi_meta_tof_diff[3] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF6_C_OFFSETUP, offset_up ));
+		spi_meta_tof_diff[4] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF7_C_OFFSETDN, offset_down ));
+		PMU_Start( BOARD_PMU_CHANNEL_TDC_SPI_WRITE, pmu_descriptor_tof_diff, NULL );
+	}
 }
 
 void tdc_get_tof_result( tdc_tof_result_t * p_result )
@@ -457,7 +573,7 @@ uint16_t tdc_get_afeout( void )
 void tdc_set_4m_bp( uint16_t v )
 {
     lock();
-    MAX3510X_WRITE_BITFIELD( NULL, AFE2, 4M_BP, v );
+    s_afe2 = MAX3510X_WRITE_BITFIELD( NULL, AFE2, 4M_BP, v );
     unlock();
 }
 
@@ -471,7 +587,7 @@ uint16_t tdc_get_4m_bp( void )
 void tdc_set_f0( uint16_t v )
 {
     lock();
-    MAX3510X_WRITE_BITFIELD( NULL, AFE2, F0, v );
+    s_afe2 = MAX3510X_WRITE_BITFIELD( NULL, AFE2, F0, v );
     unlock();
 }
 
@@ -485,7 +601,7 @@ uint16_t tdc_get_f0( void )
 void tdc_set_pga( uint16_t v )
 {
     lock();
-    MAX3510X_WRITE_BITFIELD( NULL, AFE2, PGA, v );
+    s_afe2 = MAX3510X_WRITE_BITFIELD( NULL, AFE2, PGA, v );
     unlock();
 }
 
@@ -499,7 +615,7 @@ uint16_t tdc_get_pga( void )
 void tdc_set_lowq( uint16_t v )
 {
     lock();
-    MAX3510X_WRITE_BITFIELD( NULL, AFE2, LOWQ, v );
+    s_afe2 = MAX3510X_WRITE_BITFIELD( NULL, AFE2, LOWQ, v );
     unlock();
 }
 
@@ -513,7 +629,7 @@ uint16_t tdc_get_lowq( void )
 void tdc_set_bp_bp( uint16_t v )
 {
     lock();
-    MAX3510X_WRITE_BITFIELD( NULL, AFE2, BP_BYPASS, v );
+    s_afe2 = MAX3510X_WRITE_BITFIELD( NULL, AFE2, BP_BYPASS, v );
     unlock();
 }
 

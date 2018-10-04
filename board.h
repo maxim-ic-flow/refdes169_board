@@ -36,7 +36,7 @@
 #include "max32625.h"
 #include "spim_regs.h"
 #include "rtc.h"
-
+#include "gpio.h"
 
 #define BOARD_PMU_CHANNEL_TDC_SPI_WRITE	0
 #define BOARD_PMU_CHANNEL_TDC_SPI_READ	1
@@ -48,10 +48,12 @@
 #define BOARD_SPI_TX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI1_TX_FIFO_AE
 
 #define BOARD_UART_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_UART1_TX_FIFO_AE
-#define UART_NDX								1
-#define BOARD_UART								MXC_UART1
-#define UART_IRQ								UART1_IRQn
-#define UART_FIFO								MXC_BASE_UART1_FIFO
+#define UART_NDX						1
+#define BOARD_UART						MXC_UART1
+#define UART_IRQ						UART1_IRQn
+#define UART_FIFO						MXC_BASE_UART1_FIFO
+
+#define BOARD_SQUELCH_TIMER_NDX	1
 
 #define BOARD_MAX3510X_CLOCK_FREQ               4000000 // nominal frequency of the max35104's high speed crystal
 
@@ -120,6 +122,10 @@ void board_clock_enable(bool);
 bool board_switch( uint8_t switch_ndx, bool * p_changed );
 
 void board_reset(void);
+
+void board_set_squelch_time( uint16_t time_us );
+uint16_t board_get_squelch_time( void );
+
 
 #endif
 

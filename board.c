@@ -55,6 +55,7 @@
 #include "crc.h"
 #include "rtc.h"
 #include "lp.h"
+#include "tmr.h"
 
 #include "flow.h"
 
@@ -102,9 +103,6 @@ static const gpio_cfg_t max3510x_spi = { PORT_1, (PIN_0 | PIN_1 | PIN_2 | PIN_3)
 
 static const ioman_cfg_t g_uart_cfg = IOMAN_UART( UART_NDX, IOMAN_MAP_A, IOMAN_MAP_UNUSED, IOMAN_MAP_UNUSED, 1, 0, 0 );
 static const gpio_cfg_t max3510x_uart = { PORT_0, (PIN_0 | PIN_1), GPIO_FUNC_GPIO, GPIO_PAD_NORMAL };
-
-
-
 
 
 void GPIO_P0_IRQHandler( void )
@@ -212,7 +210,6 @@ void board_init( void )
     // brings up board-specific ports
     LP_ClearWakeUpConfig();
 
-
     SYS_IOMAN_UseVDDIOH( &max3510x_spi );
     SYS_IOMAN_UseVDDIOH( &s_tdc_interrupt );
 
@@ -246,6 +243,15 @@ void board_init( void )
     }
     FLC_Init();
 
+	{
+		static const tmr32_cfg_t cont_cfg = 
+		{
+			.mode = TMR32_MODE_ONE_SHOT,
+		};
+		while( TMR_Init(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX), TMR_PRESCALE_DIV_2_0, NULL) != E_NO_ERROR );
+		TMR32_Config(MXC_TMR1, &cont_cfg);
+		TMR32_EnableINT(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX));
+	}
 
     {
         // initialize the SPI port connected to the MAX35103
@@ -284,7 +290,8 @@ void board_init( void )
 
     NVIC_SetPriority( GPIO_P0_IRQn, INTERRUPT_PRIORITY_DEFAULT );
     GPIO_IntConfig( &s_tdc_interrupt, GPIO_INT_FALLING_EDGE );
-    GPIO_RegisterCallback( &s_tdc_interrupt, tdc_interrupt, NULL );
+    GPIO_RegisterCallback( &s_tdc_interrupt, tdc_isr, NULL );
+
     board_tdc_enable_interrupt();
 
     BOARD_UART->tx_fifo_ctrl = BOARD_UART_TX_FIFO_LVL << MXC_F_UART_TX_FIFO_CTRL_FIFO_AE_LVL_POS;
@@ -311,6 +318,27 @@ void board_tdc_enable_interrupt( void )
 void board_tdc_disable_interrupt( void )
 {
     GPIO_IntDisable( &s_tdc_interrupt );
+}
+
+void board_set_squelch_time( uint16_t time_us )
+{
+	uint32_t ticks = 0;
+    if( time_us )
+    {
+        if( TMR32_TimeToTicks(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX), (uint32_t)time_us, TMR_UNIT_MICROSEC, &ticks ) != E_NO_ERROR )
+            while( 1 );
+    }
+	TMR32_SetCompare(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX), ticks);
+}
+
+uint16_t board_get_squelch_time( void )
+{
+	uint32_t ticks = TMR32_GetCompare(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX));
+
+    uint32_t timerClock = SYS_TMR_GetFreq(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX));
+    uint32_t prescale = TMR_GetPrescaler(MXC_TMR_GET_TMR(BOARD_SQUELCH_TIMER_NDX));
+
+    return (ticks * 1000 * (1 << (prescale & 0xF)) / (timerClock / 1000));
 }
 
 void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t count )

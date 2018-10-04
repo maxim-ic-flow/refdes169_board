@@ -52,8 +52,6 @@ tdc_result_t;
 
 #pragma pack()
 
-void tdc_interrupt( void* );
-
 void tdc_init( void );
 void tdc_get_tof_result( tdc_tof_result_t * p_result );
 void tdc_get_temperature_result( tdc_temperature_result_t * p_result );
@@ -171,8 +169,9 @@ void tdc_cmd_initialize( void );
 void tdc_cmd_halt( void );
 void tdc_cmd_read_config(  max3510x_registers_t * p_config );
 
-void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down );
+void tdc_measure( uint8_t offset_up, uint8_t offset_down );
 void tdc_read_thresholds( uint8_t *p_up, uint8_t *p_down );
+void tdc_isr( void* );
 
 typedef enum _tdc_last_cmd_t
 {
@@ -181,7 +180,8 @@ typedef enum _tdc_last_cmd_t
 	tdc_cmd_context_tof_up,
 	tdc_cmd_context_tof_down,
     tdc_cmd_context_temperature,
-	tdc_cmd_context_calibrate
+	tdc_cmd_context_calibrate,
+	tdc_cmd_context_squelch
 }
 tdc_cmd_context_t;
 

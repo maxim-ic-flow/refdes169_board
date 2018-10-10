@@ -23,14 +23,11 @@
 
 #define SPI_END				0xF000
 
-
 static tdc_cmd_context_t s_last_cmd;
 
 static tdc_tof_result_t             s_tof_result;
 static tdc_temperature_result_t	    s_temperature_result;
 static tdc_calibration_result_t		s_calibration_result;
-
-
 
 static const uint32_t s_tof_diff_descriptor[] =
 {

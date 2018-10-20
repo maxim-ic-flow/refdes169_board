@@ -57,10 +57,13 @@
 #include "lp.h"
 
 #include "flow.h"
-
+#include "ui.h"
 #include "tdc.h"
 
 #define RTC_HZ	4096
+
+#define GPIO_ON     ~0
+#define GPIO_OFF    0
 
 
 #define INTERRUPT_PRIORITY_DEFAULT			(configMAX_SYSCALL_INTERRUPT_PRIORITY-2)
@@ -68,48 +71,81 @@
 
 static uart_write_cb_t s_p_uart_write_cb;
 
-const gpio_cfg_t s_gpio_cfg_led[] =
+const gpio_cfg_t gpio_cfg_led[2] =
 {
-    { PORT_3, PIN_0, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL },
-    { PORT_3, PIN_1, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL },
-    { PORT_3, PIN_2, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL },
-    { PORT_3, PIN_3, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL }
+    { PORT_3, PIN_6, GPIO_FUNC_GPIO, GPIO_PAD_OPEN_DRAIN }, // BOARD_LED_RED
+    { PORT_3, PIN_7, GPIO_FUNC_GPIO, GPIO_PAD_OPEN_DRAIN }  // BOARD_LED_GREEN
 };
 
-static const gpio_cfg_t s_gpio_cfg_button_s1 = { PORT_2, PIN_3, GPIO_FUNC_GPIO, GPIO_PAD_INPUT };
-static const gpio_cfg_t s_gpio_cfg_button_s2 = { PORT_2, PIN_2, GPIO_FUNC_GPIO, GPIO_PAD_INPUT };
+#define LCD_POWER_MODE_OFF 0
+#define LCD_POWER_MODE_ON 1
 
-typedef struct _board_switch_t
+static const gpio_cfg_t gpio_cfg_lcd_power = { PORT_4, PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_OPEN_DRAIN };
+static const gpio_cfg_t gpio_cfg_lcd_cs = { PORT_2, PIN_7, GPIO_FUNC_GPIO, GPIO_PAD_INPUT };
+static const gpio_cfg_t gpio_cfg_lcd_rs[2] =
+{ 
+   { PORT_3, PIN_0, GPIO_FUNC_GPIO, GPIO_PAD_INPUT },   // config when LCD is off
+   { PORT_3, PIN_0, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL }   // config when LCD is on
+};
+static const gpio_cfg_t gpio_cfg_lcd_spi = { PORT_2, PIN_4 | PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_INPUT };
+
+static const gpio_cfg_t gpio_cfg_tot = { PORT_1, PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL };
+static const gpio_cfg_t gpio_cfg_test = { PORT_1, PIN_3, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
+
+void board_lcd_rs_data( void )
 {
-    bool		state;
-    bool		changed;
-    uint8_t		debounce_count;
-    const gpio_cfg_t * p_gpio_cfg;
+    if( !GPIO_InGet(&gpio_cfg_lcd_rs[1]) )
+    {
+        while( BOARD_LCD_SPI->fifo_ctrl & MXC_F_SPIM_FIFO_CTRL_TX_FIFO_USED )
+            vTaskDelay(1);
+    }
+    GPIO_OutSet( &gpio_cfg_lcd_rs[1] );
 }
-board_switch_t;
 
-static board_switch_t s_switches[2] =
+void board_lcd_rs_cmd( void )
 {
-    { .p_gpio_cfg = &s_gpio_cfg_button_s1 },
-    { .p_gpio_cfg = &s_gpio_cfg_button_s2 }
-};
+    if( GPIO_InGet(&gpio_cfg_lcd_rs[1]) )
+    {
+        while( BOARD_LCD_SPI->fifo_ctrl & MXC_F_SPIM_FIFO_CTRL_TX_FIFO_USED )
+            vTaskDelay(1);
+    }
+    GPIO_OutClr( &gpio_cfg_lcd_rs[1] );
+}
 
-static const gpio_cfg_t s_tdc_interrupt = { PORT_0, PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
-
-static const ioman_cfg_t spi_cfg = IOMAN_SPIM1( 1, 1, 0, 0, 0, 0 );
-static const spim_cfg_t max3510x_spim_cfg = { 1, SPIM_SSEL0_LOW, 12000000 };
-static const gpio_cfg_t max3510x_spi = { PORT_1, (PIN_0 | PIN_1 | PIN_2 | PIN_3), GPIO_FUNC_GPIO, GPIO_PAD_NORMAL };
-
-static const ioman_cfg_t g_uart_cfg = IOMAN_UART( UART_NDX, IOMAN_MAP_A, IOMAN_MAP_UNUSED, IOMAN_MAP_UNUSED, 1, 0, 0 );
-static const gpio_cfg_t max3510x_uart = { PORT_0, (PIN_0 | PIN_1), GPIO_FUNC_GPIO, GPIO_PAD_NORMAL };
-
-
-
-
-
-void GPIO_P0_IRQHandler( void )
+void GPIO_P3_IRQHandler( void )
 {
-    GPIO_Handler( 0 );
+    // user interface buttons
+    uint8_t intfl;
+    unsigned int pin;
+    intfl = MXC_GPIO->intfl[3];
+    intfl &= MXC_GPIO->inten[3];
+    MXC_GPIO->intfl[3] = intfl;
+    if( intfl & PIN_2 )
+    {
+        ui_button( board_button_escape, MXC_GPIO->in_val[3] & PIN_2 ? false : true );
+    }
+    if( intfl & PIN_3 )
+    {
+        ui_button( board_button_up, MXC_GPIO->in_val[3] & PIN_3 ? false : true );
+    }
+    if( intfl & PIN_4 )
+    {
+        ui_button( board_button_down, MXC_GPIO->in_val[3] & PIN_4 ? false : true );
+    }
+    if( intfl & PIN_5 )
+    {
+        ui_button( board_button_select, MXC_GPIO->in_val[3] & PIN_5 ? false : true );
+    }
+}
+
+void GPIO_P2_IRQHandler( void )
+{
+    GPIO_Handler( 2 );
+}
+
+void GPIO_P1_IRQHandler( void )
+{
+    GPIO_Handler( 1 );
 }
 
 void PMU_IRQHandler( void )
@@ -133,9 +169,9 @@ void RTC0_IRQHandler( void )
 {
     // WARNING:  breakpoints in this function will break the sample clock
     // The RTC keeps counting during a breakpoint.
-    uint32_t compare = RTC_GetCompare(0);
+    uint32_t compare = RTC_GetCompare( 0 );
 #ifdef BOARD_DEBUG
-    // This code deals with RTC overflows that happen when the 
+    // This code deals with RTC overflows that happen when the
     // processor is halted by breakpoints outside of this function
     uint32_t count = RTC_GetCount();
     if( (count - compare) < s_sampling_prescale )
@@ -144,9 +180,9 @@ void RTC0_IRQHandler( void )
     }
     else
     {
-         compare = s_sampling_prescale + count;
+        compare = s_sampling_prescale + count;
     }
-#endif     
+#endif
     RTC_SetCompare( 0, compare );
     RTC_ClearFlags( MXC_F_RTC_FLAGS_COMP0 );
     flow_sample_clock();
@@ -157,6 +193,24 @@ uint8_t board_get_sampling_frequency( void )
     return RTC_HZ / s_sampling_prescale;
 }
 
+static void start_sample_timer( void )
+{
+    uint32_t count = RTC_GetCompare( 0 );
+    if( !count )
+        count = RTC_GetCount();
+    RTC_SetCompare( 0, count + s_sampling_prescale );
+    RTC_EnableINT( MXC_F_RTC_INTEN_COMP0 );
+    NVIC_SetPendingIRQ(RTC0_IRQn);
+}
+
+static void stop_sample_timer( void )
+{
+    RTC_DisableINT( MXC_F_RTC_INTEN_COMP0 );
+    RTC_ClearFlags( MXC_F_RTC_INTEN_COMP0 );
+    NVIC_ClearPendingIRQ( RTC0_IRQn );
+    RTC_SetCompare(0,0);
+}
+
 void board_set_sampling_frequency( uint8_t freq_hz )
 {
     // ideally freq_hz = 2^N, where N is a positive integer
@@ -164,27 +218,18 @@ void board_set_sampling_frequency( uint8_t freq_hz )
 
     if(  freq_hz )
     {
-        board_disable_sample_timer();
+        stop_sample_timer();
         s_sampling_prescale = RTC_HZ / freq_hz;
-        RTC_SetCompare( 0, RTC_GetCompare(0) + s_sampling_prescale );
-        board_enable_sample_timer();
+        GPIO_IntClr( &gpio_cfg_test );
+        if( GPIO_InGet(&gpio_cfg_test) )
+            start_sample_timer();
+        GPIO_IntEnable( &gpio_cfg_test );
     }
     else
     {
+        GPIO_IntDisable( &gpio_cfg_test );
         s_sampling_prescale = 0;
-        board_disable_sample_timer();
     }
-}
-
-void board_disable_sample_timer( void )
-{
-    RTC_DisableINT( MXC_F_RTC_INTEN_COMP0 );
-}
-
-void board_enable_sample_timer( void )
-{
-    RTC_EnableINT( MXC_F_RTC_INTEN_COMP0 );
-    RTC_Start();   
 }
 
 #ifdef ENABLE_LP1_IDLE  // RTOS tick clock comes from the RTC
@@ -207,28 +252,83 @@ void vPortSetupTimerInterrupt( void )
 #endif // ENABLE_LP1_IDLE
 
 
+
+
+static void test_interrupt( void *pv )
+{
+    bool start = GPIO_InGet( &gpio_cfg_test ) ? true : false;
+
+    stop_sample_timer();
+    if( start )
+    {
+        flow_reset();
+        start_sample_timer();
+    }
+}
+
+
+void board_tot( board_tot_state_t state )
+{
+    if( state != board_led_state_toggle )
+    {
+        GPIO_OutPut( &gpio_cfg_tot, state == board_tot_state_on ? ~0 : 0 );
+    }
+    else
+    {
+        GPIO_OutToggle( &gpio_cfg_tot );
+    }
+}
+
 void board_init( void )
 {
-    // brings up board-specific ports
-    LP_ClearWakeUpConfig();
-
-
-    SYS_IOMAN_UseVDDIOH( &max3510x_spi );
-    SYS_IOMAN_UseVDDIOH( &s_tdc_interrupt );
+    // configures the MCU pins according to the board design
 
     uint8_t i;
-    for( i = 0; i < ARRAY_COUNT( s_gpio_cfg_led ); i++ )
-    {
-        SYS_IOMAN_UseVDDIOH( &s_gpio_cfg_led[i] );
-        board_led( i, false );
-        GPIO_Config( &s_gpio_cfg_led[i] );
-    }
-    GPIO_Config( &s_tdc_interrupt );
-    GPIO_Config( &max3510x_spi );
-    GPIO_Config( &max3510x_uart );
-    GPIO_Config( &s_gpio_cfg_button_s1 );
-    GPIO_Config( &s_gpio_cfg_button_s2 );
 
+    static const gpio_cfg_t gpio_cfg_tdc_interrupt = { PORT_2, PIN_2, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
+    static const gpio_cfg_t gpio_cfg_buttons = { PORT_3, PIN_2 | PIN_3 | PIN_4 | PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
+    static const gpio_cfg_t gpio_cfg_tdc_spi = { PORT_0, PIN_4 | PIN_5 | PIN_6 | PIN_7, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
+    static const gpio_cfg_t gpio_cfg_tdc_spi_cs = { PORT_4, PIN_4, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
+
+
+    static const gpio_cfg_t * vddioh[] =
+    {
+        // array of GPIO's that use the 3V3 rail.
+        &gpio_cfg_lcd_power,
+        &gpio_cfg_lcd_spi, 
+        &gpio_cfg_lcd_cs,
+        &gpio_cfg_lcd_rs[0],
+        &gpio_cfg_tot,
+        &gpio_cfg_tdc_spi,
+        &gpio_cfg_tdc_spi_cs,
+        &gpio_cfg_tdc_interrupt,
+        &gpio_cfg_led[0],
+        &gpio_cfg_led[1]
+    };
+    static const gpio_cfg_t * vddio[] =
+    {
+        // array of GPIO's that use the 1V8 rail
+        &gpio_cfg_test,
+        &gpio_cfg_buttons
+    };
+
+    // set default GPIO state
+
+    board_tot( board_tot_state_off );
+    board_led( BOARD_LED_GREEN, board_led_state_on );
+    board_led( BOARD_LED_RED, board_led_state_on );
+    board_lcd_power( false );
+
+    // configure all GPIO's that use the 3V3 rail.
+    for( i = 0; i < ARRAY_COUNT( vddioh ); i++ )
+    {
+        SYS_IOMAN_UseVDDIOH( vddioh[i] );
+        GPIO_Config( vddioh[i] );
+    }
+    for( i = 0; i < ARRAY_COUNT( vddio ); i++ )
+    {
+        GPIO_Config( vddio[i] );
+    }
     {
         rtc_cfg_t cfg =
         {
@@ -238,61 +338,107 @@ void board_init( void )
         if( RTC_Init( &cfg ) != E_NO_ERROR )
             while( 1 );
         NVIC_SetPriority( RTC0_IRQn, INTERRUPT_PRIORITY_FREERTOS_TIMER );
-        RTC_GetFlags();
-        RTC_ClearFlags(RTC_FLAGS_CLEAR_ALL);
-        NVIC_ClearPendingIRQ(RTC0_IRQn);
+        NVIC_ClearPendingIRQ( RTC0_IRQn );
         NVIC_EnableIRQ( RTC0_IRQn );
         MXC_PWRSEQ->msk_flags |= MXC_F_PWRSEQ_FLAGS_RTC_CMPR0;
     }
+    LP_ClearWakeUpConfig();
     FLC_Init();
 
 
     {
-        // initialize the SPI port connected to the MAX35103
-        sys_cfg_t sys_cfg;
-        sys_cfg.clk_scale = CLKMAN_SCALE_AUTO;
-        sys_cfg.io_cfg = spi_cfg;
+        // initialize the SPI port connected to the MAX35104
+        static const sys_cfg_t sys_cfg =
+        {
+            .clk_scale = CLKMAN_SCALE_AUTO,
+            .io_cfg = IOMAN_SPIM0( 1, 0, 1, 0, 0, 0, 0, 1 )
+        };
+        static const spim_cfg_t max3510x_spim_cfg = { 1, SPIM_SSEL1_LOW, 1000000 };
         if( SPIM_Init( BOARD_TDC_SPI, &max3510x_spim_cfg, &sys_cfg ) != E_NO_ERROR )
         {
             while( 1 ); // initialization failed -- step into CSL to determine the reason
         }
 
         BOARD_TDC_SPI->mstr_cfg = (BOARD_TDC_SPI->mstr_cfg & ~MXC_F_SPIM_MSTR_CFG_PAGE_SIZE) | MXC_S_SPIM_MSTR_CFG_PAGE_4B;
-		BOARD_TDC_SPI->fifo_ctrl = (BOARD_TDC_SPI->fifo_ctrl & ~(MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL|MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL)) |
-			(1 << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS) |
-			(MXC_CFG_SPIM_FIFO_DEPTH-1 << MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL_POS);
+        BOARD_TDC_SPI->fifo_ctrl = (BOARD_TDC_SPI->fifo_ctrl & ~(MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL | MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL)) |
+                                   (1 << MXC_F_SPIM_FIFO_CTRL_RX_FIFO_AF_LVL_POS) |
+                                   (MXC_CFG_SPIM_FIFO_DEPTH - 1 << MXC_F_SPIM_FIFO_CTRL_TX_FIFO_AE_LVL_POS);
     }
-
     {
         // initialize the UART connected to the PICO USB serial port
-        uart_cfg_t cfg;
-        cfg.parity = UART_PARITY_DISABLE;
-        cfg.size = UART_DATA_SIZE_8_BITS;
-        cfg.extra_stop = 0;
-        cfg.cts = 0;
-        cfg.rts = 0;
-        cfg.baud = 115200;
-
-        sys_cfg_uart_t sys_cfg;
-        sys_cfg.clk_scale = CLKMAN_SCALE_AUTO;
-        sys_cfg.io_cfg = g_uart_cfg;
-
+        static const uart_cfg_t cfg =
+        {
+            .parity = UART_PARITY_DISABLE,
+            .size = UART_DATA_SIZE_8_BITS,
+            .baud = 115200
+        };
+        static const sys_cfg_uart_t sys_cfg =
+        {
+            .clk_scale = CLKMAN_SCALE_AUTO,
+            .io_cfg = IOMAN_UART( UART_NDX, IOMAN_MAP_B, IOMAN_MAP_UNUSED, IOMAN_MAP_UNUSED, 1, 0, 0 )
+        };
         while( UART_Init( BOARD_UART, &cfg, &sys_cfg ) != E_NO_ERROR );
     }
     NVIC_SetPriority( UART_IRQ, INTERRUPT_PRIORITY_DEFAULT );
     board_uart_enable_interrupt();
 
-    NVIC_SetPriority( GPIO_P0_IRQn, INTERRUPT_PRIORITY_DEFAULT );
-    GPIO_IntConfig( &s_tdc_interrupt, GPIO_INT_FALLING_EDGE );
-    GPIO_RegisterCallback( &s_tdc_interrupt, tdc_interrupt, NULL );
-    board_tdc_enable_interrupt();
+    NVIC_SetPriority( GPIO_P1_IRQn, INTERRUPT_PRIORITY_DEFAULT );
+    NVIC_SetPriority( GPIO_P2_IRQn, INTERRUPT_PRIORITY_DEFAULT );
+    NVIC_SetPriority( GPIO_P3_IRQn, INTERRUPT_PRIORITY_DEFAULT );
+
+    GPIO_IntConfig( &gpio_cfg_tdc_interrupt, GPIO_INT_FALLING_EDGE );
+    GPIO_RegisterCallback( &gpio_cfg_tdc_interrupt, tdc_interrupt, NULL );
+
+    GPIO_IntClr( &gpio_cfg_test );
+    GPIO_IntConfig( &gpio_cfg_test, GPIO_INT_ANY_EDGE );
+    GPIO_RegisterCallback( &gpio_cfg_test, test_interrupt, NULL );
+
+    GPIO_IntConfig( &gpio_cfg_buttons, GPIO_INT_ANY_EDGE );
+    GPIO_IntClr( &gpio_cfg_buttons );
+
+    GPIO_IntEnable( &gpio_cfg_tdc_interrupt );
+    GPIO_IntEnable( &gpio_cfg_buttons );
 
     BOARD_UART->tx_fifo_ctrl = BOARD_UART_TX_FIFO_LVL << MXC_F_UART_TX_FIFO_CTRL_FIFO_AE_LVL_POS;
 
     NVIC_SetPriority( PMU_IRQn, INTERRUPT_PRIORITY_DEFAULT );
     NVIC_EnableIRQ( PMU_IRQn );
+
+    NVIC_ClearPendingIRQ( GPIO_P1_IRQn );
+    NVIC_EnableIRQ( GPIO_P1_IRQn );
+    NVIC_ClearPendingIRQ( GPIO_P2_IRQn );
+    NVIC_EnableIRQ( GPIO_P2_IRQn );
+    NVIC_ClearPendingIRQ( GPIO_P3_IRQn );
+    NVIC_EnableIRQ( GPIO_P3_IRQn );
+#ifndef ENABLE_LP1_IDLE 
+    RTC_Start();
+#endif
 }
 
+void board_lcd_power( bool state )
+{
+    if( state )
+    {
+        GPIO_OutClr( &gpio_cfg_lcd_power );
+        static const sys_cfg_t sys_cfg =
+        {
+            .clk_scale = CLKMAN_SCALE_AUTO,
+            .io_cfg = IOMAN_SPIM2( 1, 1, 0, 0, 0, 0, 0, 0 )
+        };
+        static const spim_cfg_t spim_cfg_lcd = { 0, SPIM_SSEL0_LOW, 1000000 };
+        if( SPIM_Init( BOARD_LCD_SPI, &spim_cfg_lcd, &sys_cfg ) != E_NO_ERROR )
+        {
+            while( 1 ); // initialization failed -- step into CSL to determine the reason
+        }
+        GPIO_Config( &gpio_cfg_lcd_rs[1] );
+    }
+    else
+    {
+        SPIM_Shutdown(BOARD_LCD_SPI);
+        GPIO_Config( &gpio_cfg_lcd_rs[0] );
+        GPIO_OutSet( &gpio_cfg_lcd_power );
+    }
+}
 void board_uart_enable_interrupt( void )
 {
     NVIC_EnableIRQ( UART_IRQ );
@@ -303,30 +449,20 @@ void board_uart_disable_interrupt( void )
     NVIC_DisableIRQ( UART_IRQ );
 }
 
-void board_tdc_enable_interrupt( void )
-{
-    GPIO_IntEnable( &s_tdc_interrupt );
-}
-
-void board_tdc_disable_interrupt( void )
-{
-    GPIO_IntDisable( &s_tdc_interrupt );
-}
-
 void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t count )
 {
     // used by the MAX3510x module to interface with the hardware
 
 //	tdc_shield_t *p_shield = (tdc_shield_t *)p;
     spim_req_t req;
-    req.ssel = 0;
+    req.ssel = 1;
     req.deass = 1;
     req.tx_data = pv_out;
     req.rx_data = pv_in;
     req.width = SPIM_WIDTH_1;
     req.len = count;
 
-	uint32_t fifo_ctrl = BOARD_TDC_SPI->fifo_ctrl;  // SPIM_Trans steps on fifo settings
+    uint32_t fifo_ctrl = BOARD_TDC_SPI->fifo_ctrl;  // SPIM_Trans steps on fifo settings
 
     if( (SPIM_Trans( BOARD_TDC_SPI, &req )) != count )
     {
@@ -338,7 +474,7 @@ void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t
     {
         // fatal
     }
-	BOARD_TDC_SPI->fifo_ctrl = fifo_ctrl;
+    BOARD_TDC_SPI->fifo_ctrl = fifo_ctrl;
 }
 
 bool board_flash_write( const void * p_data, uint16_t size )
@@ -360,13 +496,18 @@ void board_flash_read( void * p_data, uint16_t size )
         memcpy( p_data, (void*)(MXC_FLASH_MEM_BASE + MXC_FLASH_FULL_MEM_SIZE - MXC_FLASH_PAGE_SIZE), size );
     }
 }
-
-
-void board_led( uint8_t ndx, bool on )
+void board_led( uint8_t ndx, board_led_state_t state )
 {
-    if( ndx < ARRAY_COUNT( s_gpio_cfg_led ) )
+    if( ndx < ARRAY_COUNT( gpio_cfg_led ) )
     {
-        GPIO_OutPut( &s_gpio_cfg_led[ndx], on ? 0 : ~0 );
+        if( state != board_led_state_toggle )
+        {
+            GPIO_OutPut( &gpio_cfg_led[ndx], state == board_led_state_on ? 0 : ~0 );
+        }
+        else
+        {
+            GPIO_OutToggle( &gpio_cfg_led[ndx] );
+        }
     }
 }
 
@@ -417,12 +558,6 @@ void board_uart_write( void * p_data, uint16_t size, uart_write_cb_t p_uart_writ
     s_p_uart_write_cb = p_uart_write_cb;
     PMU_Start( BOARD_PMU_CHANNEL_UART_WRITE, uart_write_descriptor, uart_write_cb );
 
-}
-
-void board_final( void )
-{
-    NVIC_ClearPendingIRQ( GPIO_P0_IRQn );
-    NVIC_EnableIRQ( GPIO_P0_IRQn );
 }
 
 

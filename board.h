@@ -31,6 +31,7 @@
  *
  ******************************************************************************/
 #ifndef __BOARD_H__
+#define __BOARD_H__
 
 #include "max3510x.h"
 #include "max32625.h"
@@ -42,22 +43,52 @@
 #define BOARD_PMU_CHANNEL_TDC_SPI_READ	1
 #define BOARD_PMU_CHANNEL_UART_WRITE	2
 
-#define BOARD_TDC_SPI	 				MXC_SPIM1
-#define BOARD_TDC_SPI_FIFO   			MXC_SPIM1_FIFO
-#define BOARD_SPI_RX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI1_RX_FIFO_AF
-#define BOARD_SPI_TX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI1_TX_FIFO_AE
+#define BOARD_LCD_SPI	 				MXC_SPIM2
 
+
+#define BOARD_TDC_SPI	 				MXC_SPIM0
+#define BOARD_TDC_SPI_FIFO   			MXC_SPIM0_FIFO
+#define BOARD_SPI_RX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI0_RX_FIFO_AF
+#define BOARD_SPI_TX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI0_TX_FIFO_AE
+
+#define UART_NDX						1
+#define BOARD_UART						MXC_UART1
+#define UART_IRQ						UART1_IRQn
+#define UART_FIFO						MXC_BASE_UART1_FIFO
 #define BOARD_UART_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_UART1_TX_FIFO_AE
-#define UART_NDX								1
-#define BOARD_UART								MXC_UART1
-#define UART_IRQ								UART1_IRQn
-#define UART_FIFO								MXC_BASE_UART1_FIFO
 
 #define BOARD_MAX3510X_CLOCK_FREQ               4000000 // nominal frequency of the max35104's high speed crystal
 
 #define BOARD_UART_TX_FIFO_LVL		(MXC_UART_FIFO_DEPTH>>1)
 
 
+#define BOARD_LED_RED	0
+#define BOARD_LED_GREEN	1
+
+typedef enum _board_led_state_t
+{
+	board_led_state_off,
+	board_led_state_on,
+	board_led_state_toggle
+}
+board_led_state_t;
+
+typedef enum _board_tot_state_t
+{
+	board_tot_state_off,
+	board_tot_state_on,
+	board_tot_state_toggle
+}
+board_tot_state_t;
+
+typedef enum _board_button_t
+{
+	board_button_up,
+	board_button_down,
+	board_button_select,
+	board_button_escape
+}
+board_button_t;
 
 
 #define BOARD_EVENT_SYSTICK		(1<<0)
@@ -75,11 +106,9 @@ __STATIC_INLINE uint32_t board_timestamp(void)
 uint32_t board_timestamp(void);
 #endif
 
-void board_enable_sample_timer(void);
-void board_disable_sample_timer(void);
+void board_tot( board_tot_state_t state );
 
-void board_tdc_disable_interrupt(void);
-void board_tdc_enable_interrupt(void);
+void board_lcd_power( bool on );
 
 typedef void (*uart_write_cb_t)(void);
 void board_uart_write( void *p_data, uint16_t size, uart_write_cb_t p_uart_write_cb );
@@ -89,11 +118,11 @@ void board_uart_write_unlock( void );
 void board_uart_enable_interrupt(void);
 void board_uart_disable_interrupt(void);
 
-void board_led( uint8_t ndx, bool on );
+void board_led( uint8_t ndx, board_led_state_t state );
 
 
 void board_init( void );
-void board_final( void );
+
 void board_set_sampling_frequency( uint8_t freq_hz );
 uint8_t board_get_sampling_frequency( void );
 
@@ -120,6 +149,9 @@ void board_clock_enable(bool);
 bool board_switch( uint8_t switch_ndx, bool * p_changed );
 
 void board_reset(void);
+
+void board_lcd_rs_data( void );
+void board_lcd_rs_cmd( void );
 
 #endif
 

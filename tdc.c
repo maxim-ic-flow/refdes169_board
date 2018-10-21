@@ -25,7 +25,7 @@ static const uint32_t s_tof_diff_descriptor[] =
                   sizeof(s_tof_result.status) + sizeof(s_tof_result.tof),
                   (uint32_t)&s_tof_result,
                   (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
-                  BOARD_SPI_RX_FIFO_PMU_FLAG, 2 )
+                  BOARD_TDC_SPI_RX_FIFO_PMU_FLAG, 2 )
 };
 
 static const uint32_t s_temperature_descriptor[] =
@@ -37,7 +37,7 @@ static const uint32_t s_temperature_descriptor[] =
                   sizeof(s_temperature_result.status) + sizeof(s_temperature_result.temperature),
                   (uint32_t)&s_temperature_result,
                   (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
-                  BOARD_SPI_RX_FIFO_PMU_FLAG, 2 )
+                  BOARD_TDC_SPI_RX_FIFO_PMU_FLAG, 2 )
 };
 
 static const uint32_t s_calibration_descriptor[] =
@@ -49,7 +49,7 @@ static const uint32_t s_calibration_descriptor[] =
                   sizeof(s_calibration_result.status) + sizeof(s_calibration_result.calibration),
                   (uint32_t)&s_calibration_result,
                   (uint32_t)&BOARD_TDC_SPI_FIFO->rslts_32,
-                  BOARD_SPI_RX_FIFO_PMU_FLAG, 2 )
+                  BOARD_TDC_SPI_RX_FIFO_PMU_FLAG, 2 )
 };
 
 static const uint16_t s_read_tof_diff_results[] =
@@ -101,7 +101,7 @@ static const uint32_t s_toff_diff_write_descriptor[] =
                   sizeof(s_read_tof_diff_results),
                   (uint32_t)BOARD_TDC_SPI_FIFO,
                   (uint32_t)s_read_tof_diff_results,
-                  BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_tof_diff_results) )
+                  BOARD_TDC_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_tof_diff_results) )
 };
 
 static const uint32_t s_temperature_write_descriptor[] =
@@ -113,7 +113,7 @@ static const uint32_t s_temperature_write_descriptor[] =
                   sizeof(s_read_temperature_results),
                   (uint32_t)BOARD_TDC_SPI_FIFO,
                   (uint32_t)s_read_temperature_results,
-                  BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_temperature_results) )
+                  BOARD_TDC_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_temperature_results) )
 };
 
 static const uint32_t s_calibration_write_descriptor[] =
@@ -125,7 +125,7 @@ static const uint32_t s_calibration_write_descriptor[] =
                   sizeof(s_read_calibration_results),
                   (uint32_t)BOARD_TDC_SPI_FIFO,
                   (uint32_t)s_read_calibration_results,
-                  BOARD_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_calibration_results) )
+                  BOARD_TDC_SPI_TX_FIFO_PMU_FLAG, sizeof(s_read_calibration_results) )
 };
 
 
@@ -227,7 +227,7 @@ void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down )
 				  sizeof(write_offsets),
 				  (uint32_t)BOARD_TDC_SPI_FIFO,
 				  (uint32_t)write_offsets,
-				  BOARD_SPI_TX_FIFO_PMU_FLAG, 2 )
+				  BOARD_TDC_SPI_TX_FIFO_PMU_FLAG, 2 )
 	};
 	p_offset[0] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF6_C_OFFSETUP, offset_up ));
 	p_offset[1] = MAX3510X_ENDIAN(MAX3510X_REG_SET( TOF7_C_OFFSETDN, offset_down ));

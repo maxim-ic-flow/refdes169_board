@@ -441,16 +441,6 @@ void board_lcd_power( bool state )
     if( state )
     {
         GPIO_OutClr( &gpio_cfg_lcd_power );
-        static const sys_cfg_t sys_cfg =
-        {
-            .clk_scale = CLKMAN_SCALE_AUTO,
-            .io_cfg = IOMAN_SPIM2( 1, 1, 0, 0, 0, 0, 0, 0 )
-        };
-        static const spim_cfg_t spim_cfg_lcd = { 3, SPIM_SSEL0_LOW, 1500000 };
-        if( SPIM_Init( BOARD_LCD_SPI, &spim_cfg_lcd, &sys_cfg ) != E_NO_ERROR )
-        {
-            while( 1 ); // initialization failed -- step into CSL to determine the reason
-        }
         GPIO_Config( &gpio_cfg_lcd_rs[1] );
     }
     else

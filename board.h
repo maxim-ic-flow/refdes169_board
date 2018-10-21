@@ -42,11 +42,16 @@
 #define BOARD_PMU_CHANNEL_TDC_SPI_WRITE	0
 #define BOARD_PMU_CHANNEL_TDC_SPI_READ	1
 #define BOARD_PMU_CHANNEL_UART_WRITE	2
+#define BOARD_PMU_CHANNEL_LCD		3
 
-#define BOARD_LCD_SPI	 				MXC_SPIM2
+#define BOARD_TIMER_NDX_LCD		0
 
+#define BOARD_TIMER_LCD_PMU_FLAG	PMU_WAIT_IRQ_MASK2_SEL0_TMR0
 
-#define BOARD_TDC_SPI	 				MXC_SPIM0
+#define BOARD_LCD_SPI	 			MXC_SPIM2
+#define BOARD_LCD_SPI_FIFO 			MXC_BASE_SPIM2_FIFO
+
+#define BOARD_TDC_SPI	 			MXC_SPIM0
 #define BOARD_TDC_SPI_FIFO   			MXC_SPIM0_FIFO
 #define BOARD_SPI_RX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI0_RX_FIFO_AF
 #define BOARD_SPI_TX_FIFO_PMU_FLAG		PMU_WAIT_IRQ_MASK1_SEL0_SPI0_TX_FIFO_AE
@@ -81,21 +86,16 @@ typedef enum _board_tot_state_t
 }
 board_tot_state_t;
 
-typedef enum _board_button_t
-{
-	board_button_up,
-	board_button_down,
-	board_button_select,
-	board_button_escape
-}
-board_button_t;
-
-
 #define BOARD_EVENT_SYSTICK		(1<<0)
 #define BOARD_EVENT_MAX35104 	(1<<1)
 #define BOARD_EVENT_BUTTON		(1<<2)
 #define BOARD_EVENT_UART		(1<<3)
 
+#define BOARD_BUTTON_ESCAPE PIN_2
+#define BOARD_BUTTON_SELECT PIN_5
+#define BOARD_BUTTON_UP     PIN_3
+#define BOARD_BUTTON_DOWN   PIN_4
+#define BOARD_BUTTON_MASK	(BOARD_BUTTON_ESCAPE|BOARD_BUTTON_SELECT|BOARD_BUTTON_UP|BOARD_BUTTON_DOWN)
 
 #ifdef ENABLE_LP1_IDLE
 __STATIC_INLINE uint32_t board_timestamp(void)
@@ -152,6 +152,9 @@ void board_reset(void);
 
 void board_lcd_rs_data( void );
 void board_lcd_rs_cmd( void );
+
+uint32_t board_buttons(void);
+void board_buttons_enable(bool enable);
 
 #endif
 

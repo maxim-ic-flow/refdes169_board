@@ -60,6 +60,8 @@
 #include "ui.h"
 #include "tdc.h"
 
+#define BOARD_BUTTON_PORT   PORT_3
+
 #define RTC_HZ	4096
 
 #define GPIO_ON     ~0
@@ -112,29 +114,36 @@ void board_lcd_rs_cmd( void )
     GPIO_OutClr( &gpio_cfg_lcd_rs[1] );
 }
 
+#define BUTTON_GPIO_PORT  3
+
 void GPIO_P3_IRQHandler( void )
 {
     // user interface buttons
     uint8_t intfl;
     unsigned int pin;
-    intfl = MXC_GPIO->intfl[3];
-    intfl &= MXC_GPIO->inten[3];
-    MXC_GPIO->intfl[3] = intfl;
-    if( intfl & PIN_2 )
+    intfl = MXC_GPIO->intfl[BUTTON_GPIO_PORT];
+    intfl &= MXC_GPIO->inten[BUTTON_GPIO_PORT];
+    if( intfl & BOARD_BUTTON_MASK )
     {
-        ui_button( board_button_escape, MXC_GPIO->in_val[3] & PIN_2 ? false : true );
+        ui_buttons_isr();
     }
-    if( intfl & PIN_3 )
+    MXC_GPIO->intfl[BUTTON_GPIO_PORT] = intfl;
+}
+
+uint32_t board_buttons(void)
+{
+    uint32_t buttons =  ~MXC_GPIO->in_val[BUTTON_GPIO_PORT] & BOARD_BUTTON_MASK;
+}
+
+void board_buttons_enable(bool enable)
+{
+    if( enable )
     {
-        ui_button( board_button_up, MXC_GPIO->in_val[3] & PIN_3 ? false : true );
+        MXC_GPIO->inten[BUTTON_GPIO_PORT] |= BOARD_BUTTON_MASK;     // enable button interrupts
     }
-    if( intfl & PIN_4 )
+    else
     {
-        ui_button( board_button_down, MXC_GPIO->in_val[3] & PIN_4 ? false : true );
-    }
-    if( intfl & PIN_5 )
-    {
-        ui_button( board_button_select, MXC_GPIO->in_val[3] & PIN_5 ? false : true );
+        MXC_GPIO->inten[BUTTON_GPIO_PORT] &= ~BOARD_BUTTON_MASK;    // disable button interrupts
     }
 }
 
@@ -286,7 +295,7 @@ void board_init( void )
     uint8_t i;
 
     static const gpio_cfg_t gpio_cfg_tdc_interrupt = { PORT_2, PIN_2, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
-    static const gpio_cfg_t gpio_cfg_buttons = { PORT_3, PIN_2 | PIN_3 | PIN_4 | PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
+    static const gpio_cfg_t gpio_cfg_buttons = { BOARD_BUTTON_PORT, BOARD_BUTTON_MASK, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
     static const gpio_cfg_t gpio_cfg_tdc_spi = { PORT_0, PIN_4 | PIN_5 | PIN_6 | PIN_7, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
     static const gpio_cfg_t gpio_cfg_tdc_spi_cs = { PORT_4, PIN_4, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
 
@@ -344,7 +353,19 @@ void board_init( void )
     }
     LP_ClearWakeUpConfig();
     FLC_Init();
-
+    {
+        if( TMR_Init( MXC_TMR_GET_TMR(BOARD_TIMER_NDX_LCD), 0, NULL ) != E_NO_ERROR )
+        {
+            while( 1 );  // initialization failed -- step into CSL to determine the reason
+        }
+        static const tmr32_cfg_t tmr32_cfg = 
+        {
+            .compareCount = 1350,
+            .mode = TMR32_MODE_ONE_SHOT,
+        };
+        TMR32_Config( MXC_TMR_GET_TMR(BOARD_TIMER_NDX_LCD), &tmr32_cfg );
+        TMR32_EnableINT(MXC_TMR_GET_TMR(BOARD_TIMER_NDX_LCD));
+    }
 
     {
         // initialize the SPI port connected to the MAX35104
@@ -425,7 +446,7 @@ void board_lcd_power( bool state )
             .clk_scale = CLKMAN_SCALE_AUTO,
             .io_cfg = IOMAN_SPIM2( 1, 1, 0, 0, 0, 0, 0, 0 )
         };
-        static const spim_cfg_t spim_cfg_lcd = { 0, SPIM_SSEL0_LOW, 1000000 };
+        static const spim_cfg_t spim_cfg_lcd = { 3, SPIM_SSEL0_LOW, 1500000 };
         if( SPIM_Init( BOARD_LCD_SPI, &spim_cfg_lcd, &sys_cfg ) != E_NO_ERROR )
         {
             while( 1 ); // initialization failed -- step into CSL to determine the reason

@@ -2,6 +2,7 @@
 #define __LCD_H__
 
 
+void lcd_init( void );
 void lcd_off( void );
 void lcd_on( void );
 void lcd_write_cmd( uint8_t data );

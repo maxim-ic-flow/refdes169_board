@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (C) 2017 Maxim Integrated Products, Inc., All Rights Reserved.
+ * Copyright (C) 2018 Maxim Integrated Products, Inc., All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -62,14 +62,14 @@
 
 #define BOARD_BUTTON_PORT   PORT_3
 
-#define RTC_HZ	4096
+#define RTC_HZ  4096
 
 #define GPIO_ON     ~0
 #define GPIO_OFF    0
 
 
-#define INTERRUPT_PRIORITY_DEFAULT			(configMAX_SYSCALL_INTERRUPT_PRIORITY-2)
-#define INTERRUPT_PRIORITY_FREERTOS_TIMER	(configMAX_SYSCALL_INTERRUPT_PRIORITY-1)
+#define INTERRUPT_PRIORITY_DEFAULT          (configMAX_SYSCALL_INTERRUPT_PRIORITY-2)
+#define INTERRUPT_PRIORITY_FREERTOS_TIMER   (configMAX_SYSCALL_INTERRUPT_PRIORITY-1)
 
 static uart_write_cb_t s_p_uart_write_cb;
 
@@ -85,7 +85,7 @@ const gpio_cfg_t gpio_cfg_led[2] =
 static const gpio_cfg_t gpio_cfg_lcd_power = { PORT_4, PIN_5, GPIO_FUNC_GPIO, GPIO_PAD_OPEN_DRAIN };
 static const gpio_cfg_t gpio_cfg_lcd_cs = { PORT_2, PIN_7, GPIO_FUNC_GPIO, GPIO_PAD_INPUT };
 static const gpio_cfg_t gpio_cfg_lcd_rs[2] =
-{ 
+{
    { PORT_3, PIN_0, GPIO_FUNC_GPIO, GPIO_PAD_INPUT },   // config when LCD is off
    { PORT_3, PIN_0, GPIO_FUNC_GPIO, GPIO_PAD_NORMAL }   // config when LCD is on
 };
@@ -304,7 +304,7 @@ void board_init( void )
     {
         // array of GPIO's that use the 3V3 rail.
         &gpio_cfg_lcd_power,
-        &gpio_cfg_lcd_spi, 
+        &gpio_cfg_lcd_spi,
         &gpio_cfg_lcd_cs,
         &gpio_cfg_lcd_rs[0],
         &gpio_cfg_tot,
@@ -324,8 +324,8 @@ void board_init( void )
     // set default GPIO state
 
     board_tot( board_tot_state_off );
-    board_led( BOARD_LED_GREEN, board_led_state_on );
-    board_led( BOARD_LED_RED, board_led_state_on );
+    board_led( BOARD_LED_GREEN, board_led_state_off );
+    board_led( BOARD_LED_RED, board_led_state_off );
     board_lcd_power( false );
 
     // configure all GPIO's that use the 3V3 rail.
@@ -358,7 +358,7 @@ void board_init( void )
         {
             while( 1 );  // initialization failed -- step into CSL to determine the reason
         }
-        static const tmr32_cfg_t tmr32_cfg = 
+        static const tmr32_cfg_t tmr32_cfg =
         {
             .compareCount = 1350,
             .mode = TMR32_MODE_ONE_SHOT,
@@ -431,7 +431,8 @@ void board_init( void )
     NVIC_EnableIRQ( GPIO_P2_IRQn );
     NVIC_ClearPendingIRQ( GPIO_P3_IRQn );
     NVIC_EnableIRQ( GPIO_P3_IRQn );
-#ifndef ENABLE_LP1_IDLE 
+
+#ifndef ENABLE_LP1_IDLE
     RTC_Start();
 #endif
 }
@@ -464,7 +465,7 @@ void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t
 {
     // used by the MAX3510x module to interface with the hardware
 
-//	tdc_shield_t *p_shield = (tdc_shield_t *)p;
+//  tdc_shield_t *p_shield = (tdc_shield_t *)p;
     spim_req_t req;
     req.ssel = 1;
     req.deass = 1;

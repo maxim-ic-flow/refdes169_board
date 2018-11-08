@@ -1,3 +1,36 @@
+/*******************************************************************************
+ * Copyright (C) 2018 Maxim Integrated Products, Inc., All Rights Reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL MAXIM INTEGRATED BE LIABLE FOR ANY CLAIM, DAMAGES
+ * OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * Except as contained in this notice, the name of Maxim Integrated
+ * Products, Inc. shall not be used except as stated in the Maxim Integrated
+ * Products, Inc. Branding Policy.
+ *
+ * The mere transfer of this software does not imply any licenses
+ * of trade secrets, proprietary technology, copyrights, patents,
+ * trademarks, maskwork rights, or any other form of intellectual
+ * property whatsoever. Maxim Integrated Products, Inc. retains all
+ * ownership rights.
+ *
+ ******************************************************************************/
+
 #include "global.h"
 #include "lcd.h"
 #include "board.h"
@@ -14,10 +47,11 @@
 #define LCD_SPI_PAGE_SIZE 16    // must corrospond to a supported SPI controller page size.  see MXC_S_SPIM_MSTR_CFG_PAGE_* defines in spim_regs.h
 #define LCD_SPI_FIFO_LEVEL  MXC_CFG_SPIM_FIFO_DEPTH/2   // used to coordinate the SPI FIFO config with the PMU config.
 
-static uint8_t s_out[LCD_BUFFER_SIZE];  
+static uint8_t s_out[LCD_BUFFER_SIZE];
 
 uint8_t * lcd_aquire( void )
 {
+
     // this version of the LCD module has a single static buffer.
     return s_out;
 }
@@ -28,7 +62,7 @@ void lcd_release( const uint8_t *p_out )
     // This code sends an entire display's worth of data at once (all three lines).
     // This method provides the best efficiency in terms of MCU
     // processing overhead.
-    // 
+    //
     // This version of the LCD module has a single static buffer.
     //
     // Note this routine is not synchronized with hardware.
@@ -40,7 +74,6 @@ void lcd_release( const uint8_t *p_out )
     static const uint32_t lcd_write_pmu_descriptor[] =
     {
         // PMU descriptor that sends text data in s_out to the LCD
-
         // send the SPI header
         PMU_TRANSFER( PMU_NO_INTERRUPT, PMU_NO_STOP,
                       PMU_TX_READ_16_BIT, PMU_TX_READ_INC,
@@ -57,7 +90,7 @@ void lcd_release( const uint8_t *p_out )
                       (uint32_t)BOARD_LCD_SPI_FIFO,
                       (uint32_t)s_out,
                       BOARD_LCD_SPI_TX_PMU_FLAG, LCD_SPI_FIFO_LEVEL )
-    };    
+    };
     // Tell the PMU to exeucte the above descriptor
     PMU_Start( BOARD_PMU_CHANNEL_LCD, lcd_write_pmu_descriptor, NULL );
 }
@@ -128,8 +161,9 @@ void lcd_printf( const char * p_format, ... )
 {
     va_list args;
     va_start( args, p_format );
-    vsnprintf( s_out, sizeof(s_out), p_format, args );
-    lcd_release(NULL);
+    uint8_t *p_buf = lcd_aquire();
+    vsnprintf( p_buf, sizeof(s_out), p_format, args );
+    lcd_release(p_buf);
     va_end( args );
 }
 

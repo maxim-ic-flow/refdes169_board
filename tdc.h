@@ -1,3 +1,36 @@
+/*******************************************************************************
+ * Copyright (C) 2018 Maxim Integrated Products, Inc., All Rights Reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL MAXIM INTEGRATED BE LIABLE FOR ANY CLAIM, DAMAGES
+ * OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * Except as contained in this notice, the name of Maxim Integrated
+ * Products, Inc. shall not be used except as stated in the Maxim Integrated
+ * Products, Inc. Branding Policy.
+ *
+ * The mere transfer of this software does not imply any licenses
+ * of trade secrets, proprietary technology, copyrights, patents,
+ * trademarks, maskwork rights, or any other form of intellectual
+ * property whatsoever. Maxim Integrated Products, Inc. retains all
+ * ownership rights.
+ *
+ ******************************************************************************/
+
 #ifndef _TDC_H_
 #define _TDC_H_
 
@@ -18,7 +51,7 @@ typedef struct _tdc_tof_result_t
 {
     // evenly divisable by 4
     uint16_t                status;
-    tof_result_t	        tof; 
+    tof_result_t	        tof;
     uint16_t                pad;
 }
 tdc_tof_result_t;
@@ -34,9 +67,9 @@ tdc_temperature_result_t;
 
 typedef struct _tdc_calibration_result_t
 {
-	uint16_t				status;
-	max3510x_fixed_t	    calibration;
-	uint16_t                pad;
+    uint16_t				status;
+    max3510x_fixed_t	    calibration;
+    uint16_t                pad;
 }
 tdc_calibration_result_t;
 
@@ -45,7 +78,7 @@ typedef union _tdc_result_t
     uint16_t                	status;
     tdc_temperature_result_t	temperature;
     tdc_tof_result_t 		    tof;
-	tdc_calibration_result_t	calibration;
+    tdc_calibration_result_t	calibration;
 }
 tdc_result_t;
 
@@ -57,7 +90,7 @@ void tdc_interrupt( void* );
 void tdc_init( void );
 void tdc_get_tof_result( tdc_tof_result_t * p_result );
 void tdc_get_temperature_result( tdc_temperature_result_t * p_result );
-void tdc_get_calibration_result( tdc_calibration_result_t *p_result );
+void tdc_get_calibration_result( tdc_calibration_result_t * p_result );
 void tdc_configure( const max3510x_registers_t * p_config );
 
 void tdc_set_sfreq( uint16_t sfreq );
@@ -172,20 +205,18 @@ void tdc_cmd_halt( void );
 void tdc_cmd_read_config(  max3510x_registers_t * p_config );
 
 void tdc_adjust_and_measure( uint8_t offset_up, uint8_t offset_down );
-void tdc_read_thresholds( uint8_t *p_up, uint8_t *p_down );
+void tdc_read_thresholds( uint8_t * p_up, uint8_t * p_down );
 
 typedef enum _tdc_last_cmd_t
 {
     tdc_cmd_context_none,
     tdc_cmd_context_tof_diff,
-	tdc_cmd_context_tof_up,
-	tdc_cmd_context_tof_down,
+    tdc_cmd_context_tof_up,
+    tdc_cmd_context_tof_down,
     tdc_cmd_context_temperature,
-	tdc_cmd_context_calibrate
+    tdc_cmd_context_calibrate
 }
 tdc_cmd_context_t;
-
-tdc_cmd_context_t tdc_cmd_context( void );
 
 
 #endif

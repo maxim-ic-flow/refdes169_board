@@ -127,7 +127,7 @@ void lcd_on( void )
         .clk_scale = CLKMAN_SCALE_AUTO,
         .io_cfg = IOMAN_SPIM2( 1, 1, 0, 0, 0, 0, 0, 0 )
     };
-    static const spim_cfg_t spim_cfg_lcd = { 3, SPIM_SSEL0_LOW, 750000 };
+    static const spim_cfg_t spim_cfg_lcd = { 3, SPIM_SSEL0_LOW, 375000 };
 
     board_lcd_power( true );
 

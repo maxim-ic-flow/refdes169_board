@@ -91,7 +91,7 @@ void tdc_init( void );
 void tdc_get_tof_result( tdc_tof_result_t * p_result );
 void tdc_get_temperature_result( tdc_temperature_result_t * p_result );
 void tdc_get_calibration_result( tdc_calibration_result_t * p_result );
-void tdc_configure( const max3510x_registers_t * p_config );
+bool tdc_configure( const max3510x_registers_t * p_config );
 
 void tdc_set_sfreq( uint16_t sfreq );
 uint16_t tdc_get_sfreq( void );

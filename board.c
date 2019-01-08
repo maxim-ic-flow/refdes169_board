@@ -297,7 +297,6 @@ void board_init( void )
     static const gpio_cfg_t gpio_cfg_tdc_interrupt = { PORT_2, PIN_2, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
     static const gpio_cfg_t gpio_cfg_buttons = { BOARD_BUTTON_PORT, BOARD_BUTTON_MASK, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
     static const gpio_cfg_t gpio_cfg_tdc_spi = { PORT_0, PIN_4 | PIN_5 | PIN_6 | PIN_7, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
-    static const gpio_cfg_t gpio_cfg_tdc_spi_cs = { PORT_4, PIN_4, GPIO_FUNC_GPIO, GPIO_PAD_INPUT_PULLUP };
 
 
     static const gpio_cfg_t * vddioh[] =
@@ -309,7 +308,6 @@ void board_init( void )
         &gpio_cfg_lcd_rs[0],
         &gpio_cfg_tot,
         &gpio_cfg_tdc_spi,
-        &gpio_cfg_tdc_spi_cs,
         &gpio_cfg_tdc_interrupt,
         &gpio_cfg_led[0],
         &gpio_cfg_led[1]
@@ -372,9 +370,9 @@ void board_init( void )
         static const sys_cfg_t sys_cfg =
         {
             .clk_scale = CLKMAN_SCALE_AUTO,
-            .io_cfg = IOMAN_SPIM0( 1, 0, 1, 0, 0, 0, 0, 1 )
+            .io_cfg = IOMAN_SPIM0( 1, 1, 0, 0, 0, 0, 0, 1 )
         };
-        static const spim_cfg_t max3510x_spim_cfg = { 1, SPIM_SSEL1_LOW, 1000000 };
+        static const spim_cfg_t max3510x_spim_cfg = { 1, SPIM_SSEL0_LOW, 1000000 };
         if( SPIM_Init( BOARD_TDC_SPI, &max3510x_spim_cfg, &sys_cfg ) != E_NO_ERROR )
         {
             while( 1 ); // initialization failed -- step into CSL to determine the reason
@@ -467,7 +465,7 @@ void max3510x_spi_xfer( max3510x_t p, void * pv_in, const void * pv_out, uint8_t
 
 //  tdc_shield_t *p_shield = (tdc_shield_t *)p;
     spim_req_t req;
-    req.ssel = 1;
+    req.ssel = 0;
     req.deass = 1;
     req.tx_data = pv_out;
     req.rx_data = pv_in;

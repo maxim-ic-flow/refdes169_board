@@ -192,15 +192,28 @@ void tdc_init( void )
     max3510x_reset( NULL );
     xSemaphoreGive( s_bus_lock );
     xSemaphoreGive( s_cmd_lock );
-    max3510x_wait_for_reset_complete( NULL );
 }
 
-void tdc_configure( const max3510x_registers_t * p_config )
+bool tdc_configure( const max3510x_registers_t * p_config )
 {
+    bool bret = false;
     lock();
-    max3510x_write_config( NULL, p_config );
+    const uint8_t timeout = 10;
+    uint8_t count = 0;
+    while((max3510x_interrupt_status(NULL) == MAX3510X_REG_INTERRUPT_STATUS_INVALID) && count < timeout )
+    {
+        vTaskDelay( portDELAY_MS(timeout));
+        count++;
+    }
+    if( count != timeout )
+        max3510x_write_config( NULL, p_config );
     unlock();
-    tdc_cmd_bpcal();
+    if( count != timeout )
+    {
+        tdc_cmd_bpcal();
+        bret = true;
+    }
+    return bret;
 }
 
 static void pmu_write_complete_cb( int status )
